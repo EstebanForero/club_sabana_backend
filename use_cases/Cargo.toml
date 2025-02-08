@@ -1,7 +1,6 @@
 [package]
-name = "http_api"
+name = "use_cases"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = "0.8.1"
