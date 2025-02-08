@@ -1,0 +1,31 @@
+# Generated for Rust workspace projects
+
+# Target directory (compiled output)
+/target/
+target/
+
+# Cargo package cache
+**/Cargo.lock
+
+# Build artifacts and incremental compilation
+**/debug/
+**/release/
+**/out/
+**/incremental/
+
+# Tests and benchmarking output
+/tests/output/
+benches/**/target/
+
+# Environment variables and secrets
+
+.env
+.env.local
+.env.*.local
+secrets/
+
+
+# Logs and debugging
+*.log
+debug.log
+

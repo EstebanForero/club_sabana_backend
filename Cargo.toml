@@ -1,0 +1,4 @@
+[workspace]
+members = ["http_api"]
+resolver = "2"
+
