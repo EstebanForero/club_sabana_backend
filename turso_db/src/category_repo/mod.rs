@@ -1,12 +1,16 @@
 use async_trait::async_trait;
+use entities::category::Category;
 use use_cases::category_service::err::Result;
 use use_cases::category_service::repository_trait::CategoryRepository;
+use uuid::Uuid;
 
 use crate::TursoDb;
 
 #[async_trait]
 impl CategoryRepository for TursoDb {
-    async fn create_category(&self, category: &Category) -> Result<()> {}
+    async fn create_category(&self, category: &Category) -> Result<()> {
+        todo!()
+    }
 
     fn get_category_by_id(&self, id: Uuid) -> Result<Option<Category>> {
         todo!()

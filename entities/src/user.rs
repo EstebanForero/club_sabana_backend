@@ -4,7 +4,7 @@ use chrono::{NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct User {
     pub id_user: Uuid,
     pub first_name: String,
@@ -24,8 +24,9 @@ pub struct User {
     pub deleted: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub enum IdType {
+    #[default]
     CC,
 }
 
