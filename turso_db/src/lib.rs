@@ -63,6 +63,16 @@ impl TestDbBuilder {
         turso_db
     }
 
+    pub async fn create_full() -> TursoDb {
+        Self::create()
+            .await
+            .apply_doc_types()
+            .await
+            .apply_user_roles()
+            .await
+            .build()
+    }
+
     pub async fn print_tables(&self) {
         let conn = self.conn.clone();
 

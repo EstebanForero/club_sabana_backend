@@ -1,5 +1,6 @@
 use super::date_serde;
 use super::datetime_serde;
+use chrono::Utc;
 use chrono::{NaiveDate, NaiveDateTime};
 use enum2str::EnumStr;
 use serde::{Deserialize, Serialize};
@@ -68,8 +69,6 @@ pub struct UserCreation {
     pub last_name: String,
     #[serde(with = "date_serde")]
     pub birth_date: NaiveDate,
-    #[serde(with = "datetime_serde")]
-    pub registration_date: NaiveDateTime,
     pub email: String,
     pub phone_number: String,
     pub country_code: String,
@@ -95,7 +94,7 @@ impl UserCreation {
             first_name: self.first_name,
             last_name: self.last_name,
             birth_date: self.birth_date,
-            registration_date: self.registration_date,
+            registration_date: Utc::now().naive_utc(),
             email: self.email,
             phone_number: self.phone_number,
             country_code: self.country_code,

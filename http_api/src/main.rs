@@ -1,8 +1,11 @@
-use std::sync::Arc;
+use std::{
+    net::{Ipv4Addr, SocketAddrV4},
+    sync::Arc,
+};
 
 use axum::Router;
 use serde::Deserialize;
-use tracing::error;
+use tracing::{error, info};
 use turso_db::TursoDb;
 use use_cases::user_service::UserService;
 
@@ -12,7 +15,7 @@ mod user_endpoints;
 struct Config {
     db_url: String,
     db_token: String,
-    port: String,
+    port: u16,
     token_key: String,
 }
 
@@ -34,7 +37,11 @@ async fn main() {
 
     main_router = main_router.merge(user_endpoints::user_router(user_service));
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), config.port);
+
+    info!("Starting server in the addr: {addr}");
+
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 
     axum::serve(listener, main_router).await.unwrap();
 }
