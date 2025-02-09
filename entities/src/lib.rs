@@ -1,3 +1,4 @@
+pub mod category;
 pub mod date_serde;
 pub mod datetime_serde;
 pub mod tournament;

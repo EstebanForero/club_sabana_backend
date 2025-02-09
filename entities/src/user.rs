@@ -19,9 +19,14 @@ pub struct User {
     pub country_code: String,
     pub password: String,
     pub identification_number: String,
-    pub identification_type: Uuid,
+    pub identification_type: IdType,
     pub user_rol: Uuid,
     pub deleted: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum IdType {
+    CC,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -32,7 +37,7 @@ pub struct UserRole {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IdentificationType {
-    pub identification_type: Uuid,
+    pub identification_type: IdType,
     pub deleted: bool,
 }
 
@@ -40,6 +45,6 @@ pub struct IdentificationType {
 pub struct UserCategory {
     pub id_user: Uuid,
     pub id_category: Uuid,
-    pub user_level: Uuid,
+    pub user_level: String,
     pub deleted: bool,
 }
