@@ -7,3 +7,6 @@ edition = "2021"
 async-trait = "0.1.86"
 libsql = "0.6.0"
 use_cases = { path = "../use_cases" }
+entities = { path = "../entities" }
+uuid = { version = "1.13.1", features = ["v4"] }
+thiserror = "2.0.11"

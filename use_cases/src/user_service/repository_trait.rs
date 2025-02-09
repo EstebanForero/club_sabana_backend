@@ -1,14 +1,16 @@
 use super::err::Result;
+use async_trait::async_trait;
 use entities::user::*;
 use uuid::Uuid;
 
+#[async_trait]
 pub trait UserRepository {
-    fn create_user(&self, user: &User) -> Result<()>;
-    fn get_user_by_id(&self, id: Uuid) -> Result<Option<User>>;
-    fn get_user_by_email(&self, email: &str) -> Result<Option<User>>;
-    fn update_user(&self, user: &User) -> Result<()>;
-    fn delete_user(&self, id: Uuid) -> Result<()>; // Soft delete (set deleted = true)
-    fn list_users(&self) -> Result<Vec<User>>;
+    async fn create_user(&self, user: &User) -> Result<()>;
+    async fn get_user_by_id(&self, id: Uuid) -> Result<Option<User>>;
+    async fn get_user_by_email(&self, email: &str) -> Result<Option<User>>;
+    async fn update_user(&self, user: &User) -> Result<()>;
+    async fn delete_user(&self, id: Uuid) -> Result<()>;
+    async fn list_users(&self) -> Result<Vec<User>>;
 }
 
 pub trait UserRoleRepository {
