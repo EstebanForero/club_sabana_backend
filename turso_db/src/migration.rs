@@ -40,7 +40,7 @@ CREATE TABLE level (
 ----------------------------------------------------------------
 -- 5) "user" (quoted because 'user' can be a reserved keyword)
 ----------------------------------------------------------------
-CREATE TABLE "user" (
+CREATE TABLE person (
     id_user                TEXT PRIMARY KEY,
     first_name             TEXT NOT NULL,
     last_name              TEXT NOT NULL,

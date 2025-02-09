@@ -13,7 +13,7 @@ impl UserRepository for TursoDb {
         let conn = self.get_connection().await?;
 
         conn.execute(
-            "INSERT INTO \"user\" (
+            "INSERT INTO person (
                 id_user, first_name, last_name, birth_date, registration_date, 
                 email, email_verified, phone_number, country_code, password, 
                 identification_number, identification_type, user_rol, deleted
@@ -48,7 +48,7 @@ impl UserRepository for TursoDb {
 
         let mut rows = conn
             .query(
-                "SELECT name, age, vision, avatar FROM \"user\" WHERE id = ?1",
+                "SELECT name, age, vision, avatar FROM person WHERE id = ?1",
                 params![id.to_string()],
             )
             .await

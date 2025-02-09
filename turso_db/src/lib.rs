@@ -34,11 +34,29 @@ impl TursoDb {
 
         let conn = turso_db.get_connection().await?;
 
-        conn.execute(&migration::get_migration(), params![])
+        conn.execute_batch(&migration::get_migration())
             .await
             .expect("Error applying migration");
 
-        println!("Migration applied succesfully");
+        let mut rows = conn
+            .query(
+                "
+                SELECT name, sql
+                FROM sqlite_master
+                WHERE type = 'table';
+                ",
+                params![],
+            )
+            .await
+            .expect("Error getting tables info");
+
+        while let Some(row) = rows.next().await? {
+            let table_name = row.get_str(0).unwrap_or("Unknown table");
+            let table_sql = row.get_str(1).unwrap_or("No SQL available");
+            println!("Table: {}\nSQL: {}\n", table_name, table_sql);
+        }
+
+        println!("Migration applied successfully");
 
         Ok(turso_db)
     }
