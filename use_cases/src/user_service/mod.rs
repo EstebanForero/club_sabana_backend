@@ -20,11 +20,11 @@ pub struct LogInResponse {
 }
 
 impl UserService {
-    fn new(user_repo: Arc<dyn UserRepository>) -> Self {
+    pub fn new(user_repo: Arc<dyn UserRepository>) -> Self {
         Self { user_repo }
     }
 
-    async fn register_user(&self, user_creation: UserCreation) -> Result<()> {
+    pub async fn register_user(&self, user_creation: UserCreation) -> Result<()> {
         let user = user_creation.build_user(UserCreationExtra {
             id_user: Uuid::new_v4(),
             email_verified: false,
@@ -37,7 +37,7 @@ impl UserService {
         Ok(())
     }
 
-    async fn get_all_users(&self) -> Result<Vec<UserInfo>> {
+    pub async fn get_all_users(&self) -> Result<Vec<UserInfo>> {
         let users = self.user_repo.list_users().await?;
 
         let users_info = users.into_iter().map(|user| UserInfo::from(user)).collect();
@@ -45,16 +45,16 @@ impl UserService {
         Ok(users_info)
     }
 
-    async fn get_user_by_id(&self, user_id: Uuid) -> Result<UserInfo> {
+    pub async fn get_user_by_id(&self, user_id: Uuid) -> Result<UserInfo> {
         let user = self.user_repo.get_user_by_id(user_id).await?;
 
         match user {
             Some(user) => Ok(UserInfo::from(user)),
-            None => Err(Error::UserDontExist),
+            None => Err(Error::UserIdDontExist),
         }
     }
 
-    async fn log_in_user(&self, user_log_in_info: UserLogInInfo) -> Result<LogInResponse> {
+    pub async fn log_in_user(&self, user_log_in_info: UserLogInInfo) -> Result<LogInResponse> {
         let identifier = user_log_in_info.identifier;
 
         let user_id =
@@ -63,7 +63,7 @@ impl UserService {
             } else if let Some(user_id) = self.user_repo.get_user_id_by_phone(&identifier).await? {
                 user_id
             } else {
-                return Err(Error::UserDontExist);
+                return Err(Error::UserIdDontExist);
             };
 
         Ok(LogInResponse {

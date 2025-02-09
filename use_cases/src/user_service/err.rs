@@ -7,5 +7,5 @@ pub enum Error {
     #[error("Unknow error in the database: {0}")]
     UnknownDatabaseError(#[from] Box<dyn std::error::Error>),
     #[error("User do not exists")]
-    UserDontExist,
+    UserIdDontExist,
 }

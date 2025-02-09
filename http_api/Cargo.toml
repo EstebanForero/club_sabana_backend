@@ -5,3 +5,12 @@ edition = "2021"
 
 [dependencies]
 axum = "0.8.1"
+use_cases = { path = "../use_cases" }
+entities = { path = "../entities" }
+tracing = "0.1.41"
+tracing-subscriber = "0.3.19"
+tokio = { version = "1.43.0", features = ["full"] }
+turso_db = { path = "../turso_db" }
+serde = { version = "1.0.217", features = ["derive"] }
+dotenvy = "0.15.7"
+envy = "0.4.2"

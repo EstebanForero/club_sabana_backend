@@ -4,7 +4,7 @@ use entities::user::*;
 use uuid::Uuid;
 
 #[async_trait]
-pub trait UserRepository {
+pub trait UserRepository: Sync + Send {
     async fn create_user(&self, user: &User) -> Result<()>;
     async fn get_user_by_id(&self, id: Uuid) -> Result<Option<User>>;
 
@@ -28,9 +28,9 @@ pub trait UserRoleRepository {
 }
 
 pub trait IdentificationTypeRepository {
-    fn create_identification_type(&self, id_type: &IdentificationType) -> Result<()>;
-    fn get_identification_type_by_id(&self, id: Uuid) -> Result<Option<IdentificationType>>;
-    fn list_identification_types(&self) -> Result<Vec<IdentificationType>>;
+    fn create_identification_type(&self, id_type: &IdType) -> Result<()>;
+    fn get_identification_type_by_id(&self, id: Uuid) -> Result<Option<IdType>>;
+    fn list_identification_types(&self) -> Result<Vec<IdType>>;
 }
 
 pub trait UserCategoryRepository {
