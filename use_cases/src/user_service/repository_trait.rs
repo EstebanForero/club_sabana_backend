@@ -7,7 +7,15 @@ use uuid::Uuid;
 pub trait UserRepository {
     async fn create_user(&self, user: &User) -> Result<()>;
     async fn get_user_by_id(&self, id: Uuid) -> Result<Option<User>>;
-    async fn get_user_by_email(&self, email: &str) -> Result<Option<User>>;
+
+    async fn get_user_id_by_email(&self, email: &str) -> Result<Option<Uuid>>;
+    async fn get_user_id_by_phone(&self, phone_number: &str) -> Result<Option<Uuid>>;
+    async fn get_user_id_by_identification(
+        &self,
+        identification_number: &str,
+        identification_type: &IdType,
+    ) -> Result<Option<Uuid>>;
+
     async fn update_user(&self, user: &User) -> Result<()>;
     async fn delete_user(&self, id: Uuid) -> Result<()>;
     async fn list_users(&self) -> Result<Vec<User>>;

@@ -1,6 +1,7 @@
 use super::date_serde;
 use super::datetime_serde;
 use chrono::{NaiveDate, NaiveDateTime};
+use enum2str::EnumStr;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -20,19 +21,27 @@ pub struct User {
     pub password: String,
     pub identification_number: String,
     pub identification_type: IdType,
-    pub user_rol: Uuid,
+    pub user_rol: URol,
     pub deleted: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, EnumStr)]
 pub enum IdType {
     #[default]
     CC,
 }
 
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, EnumStr)]
+pub enum URol {
+    #[default]
+    USER,
+    ADMIN,
+    TRAINER,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserRole {
-    pub user_rol: Uuid,
+    pub user_rol: URol,
     pub deleted: bool,
 }
 
