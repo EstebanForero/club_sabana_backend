@@ -1,10 +1,12 @@
 use super::err::Result;
+use async_trait::async_trait;
 use entities::category::{Category, CategoryRequirement, Level};
 use uuid::Uuid;
 
 /// Trait defining category-related operations
+#[async_trait]
 pub trait CategoryRepository {
-    fn create_category(&self, category: &Category) -> Result<()>;
+    async fn create_category(&self, category: &Category) -> Result<()>;
     fn get_category_by_id(&self, id: Uuid) -> Result<Option<Category>>;
     fn update_category(&self, category: &Category) -> Result<()>;
     fn delete_category(&self, id: Uuid) -> Result<()>; // Soft delete
