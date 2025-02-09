@@ -6,4 +6,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("Unknow error in the database: {0}")]
     UnknownDatabaseError(#[from] Box<dyn std::error::Error>),
+    #[error("User do not exists")]
+    UserDontExist,
 }
