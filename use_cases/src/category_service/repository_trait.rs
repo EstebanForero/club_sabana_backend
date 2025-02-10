@@ -1,16 +1,19 @@
 use super::err::Result;
 use async_trait::async_trait;
-use entities::category::{Category, CategoryRequirement, Level};
+use entities::{
+    category::{Category, CategoryRequirement, Level},
+    user::UserCategory,
+};
 use uuid::Uuid;
 
 /// Trait defining category-related operations
 #[async_trait]
 pub trait CategoryRepository {
     async fn create_category(&self, category: &Category) -> Result<()>;
-    fn get_category_by_id(&self, id: Uuid) -> Result<Option<Category>>;
-    fn update_category(&self, category: &Category) -> Result<()>;
-    fn delete_category(&self, id: Uuid) -> Result<()>; // Soft delete
-    fn list_categories(&self) -> Result<Vec<Category>>;
+    async fn get_category_by_id(&self, id: Uuid) -> Result<Option<Category>>;
+    async fn update_category(&self, category: &Category) -> Result<()>;
+    async fn delete_category(&self, id: Uuid) -> Result<()>; // Soft delete
+    async fn list_categories(&self) -> Result<Vec<Category>>;
 }
 
 /// Trait defining level-related operations
@@ -21,7 +24,20 @@ pub trait LevelRepository {
 }
 
 /// Trait defining category requirements
+#[async_trait]
 pub trait CategoryRequirementRepository {
-    fn create_category_requirement(&self, requirement: &CategoryRequirement) -> Result<()>;
-    fn get_category_requirements(&self, category_id: Uuid) -> Result<Vec<CategoryRequirement>>;
+    async fn create_category_requirement(&self, requirement: &CategoryRequirement) -> Result<()>;
+    async fn get_category_requirements(
+        &self,
+        category_id: Uuid,
+    ) -> Result<Vec<CategoryRequirement>>;
+}
+
+#[async_trait]
+pub trait UserCategoryRepository {
+    async fn get_user_category(
+        &self,
+        id_user: Uuid,
+        id_category: Uuid,
+    ) -> Result<Option<UserCategory>>;
 }
