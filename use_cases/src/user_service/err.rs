@@ -8,4 +8,8 @@ pub enum Error {
     UnknownDatabaseError(#[from] Box<dyn std::error::Error>),
     #[error("User do not exists")]
     UserIdDontExist,
+    #[error("Error hashing")]
+    ErrorHashing(String),
+    #[error("Error verifying hash")]
+    ErrorVerificationHash(String),
 }

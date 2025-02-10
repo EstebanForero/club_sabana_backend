@@ -4,6 +4,7 @@ use entities::user::{URol, UserCreation, UserCreationExtra, UserInfo, UserLogInI
 use repository_trait::UserRepository;
 
 pub mod err;
+pub mod hasher_trait;
 pub mod repository_trait;
 
 use err::{Error, Result};

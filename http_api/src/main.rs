@@ -5,6 +5,7 @@ use std::{
 
 use axum::Router;
 use serde::Deserialize;
+use tower_http::cors::{Cors, CorsLayer};
 use tracing::{error, info};
 use turso_db::TursoDb;
 use use_cases::user_service::UserService;
@@ -36,6 +37,10 @@ async fn main() {
     let user_service = UserService::new(Arc::new(turso_db));
 
     main_router = main_router.merge(user_endpoints::user_router(user_service));
+
+    let corsLayer = CorsLayer::permissive();
+
+    main_router = main_router.layer(corsLayer);
 
     let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), config.port);
 

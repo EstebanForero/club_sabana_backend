@@ -42,5 +42,13 @@ fn message_from_err(err: Error, endpoint_name: &str) -> &'static str {
             "We are having problems in the server, try again"
         }
         Error::UserIdDontExist => "Unable to find user with the provided id",
+        Error::ErrorHashing(error) => {
+            error!("{endpoint_name}: {error}");
+            "We are having problems in the server, try again"
+        }
+        Error::ErrorVerificationHash(error) => {
+            error!("{endpoint_name}: {error}");
+            "We are having problems in the server, try again"
+        }
     }
 }
