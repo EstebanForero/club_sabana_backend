@@ -2,11 +2,10 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{delete, get, post, put},
+    routing::{get, post, put},
     Json, Router,
 };
 use entities::tournament::{Tournament, TournamentAttendance, TournamentRegistration};
-use serde::{Deserialize, Serialize};
 use tracing::error;
 use use_cases::tournament_service::{err::Error, TournamentService};
 use uuid::Uuid;
@@ -23,14 +22,14 @@ pub fn tournament_router(tournament_service: TournamentService) -> Router {
             post(create_tournament).get(list_tournaments),
         )
         .route(
-            "/tournaments/:id",
+            "/tournaments/{id}",
             get(get_tournament)
                 .put(update_tournament)
                 .delete(delete_tournament),
         )
-        .route("/tournaments/:id/register", post(register_user))
-        .route("/tournaments/:id/attendance", post(record_attendance))
-        .route("/tournaments/:id/position", put(update_position))
+        .route("/tournaments/{id}/register", post(register_user))
+        .route("/tournaments/{id}/attendance", post(record_attendance))
+        .route("/tournaments/{id}/position", put(update_position))
         .with_state(tournament_service)
 }
 
@@ -41,13 +40,13 @@ async fn alive() -> Result<Json<String>, Response> {
 async fn create_tournament(
     State(tournament_service): State<TournamentService>,
     Json(tournament): Json<Tournament>,
-) -> Result<Json<Tournament>, Response> {
+) -> Result<(), Response> {
     tournament_service
         .create_tournament(tournament)
         .await
         .map_err(|err| internal_error_response(&message_from_err(err, "create tournament")))?;
 
-    Ok(Json(tournament))
+    Ok(())
 }
 
 async fn get_tournament(
@@ -64,15 +63,14 @@ async fn get_tournament(
 
 async fn update_tournament(
     State(tournament_service): State<TournamentService>,
-    Path(id): Path<Uuid>,
     Json(tournament): Json<Tournament>,
-) -> Result<Json<Tournament>, Response> {
+) -> Result<(), Response> {
     tournament_service
         .update_tournament(tournament)
         .await
         .map_err(|err| internal_error_response(&message_from_err(err, "update tournament")))?;
 
-    Ok(Json(tournament))
+    Ok(())
 }
 
 async fn delete_tournament(
@@ -100,7 +98,6 @@ async fn list_tournaments(
 
 async fn register_user(
     State(tournament_service): State<TournamentService>,
-    Path(tournament_id): Path<Uuid>,
     Json(registration): Json<TournamentRegistration>,
 ) -> Result<Json<String>, Response> {
     tournament_service
@@ -113,7 +110,6 @@ async fn register_user(
 
 async fn record_attendance(
     State(tournament_service): State<TournamentService>,
-    Path(tournament_id): Path<Uuid>,
     Json(attendance): Json<TournamentAttendance>,
 ) -> Result<Json<String>, Response> {
     tournament_service
@@ -139,7 +135,7 @@ async fn update_position(
 
 fn message_from_err(err: Error, endpoint_name: &str) -> String {
     let error_msg = match err {
-        Error::DatabaseError(error) => {
+        Error::UnknownDatabaseError(error) => {
             error!("{endpoint_name}: {error}");
             "We are having problems in the server, try again"
         }
