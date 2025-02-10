@@ -36,7 +36,7 @@ pub fn generate_jwt(
         sub: log_in_response.user_id,
         exp: now + 3600,
         iat: now,
-        user_rol: log_in_response.user_rol,
+        user_rol: log_in_response.user_rol.clone(),
     };
 
     let token = encode(
