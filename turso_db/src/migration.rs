@@ -38,7 +38,7 @@ CREATE TABLE level (
 );
 
 ----------------------------------------------------------------
--- 5) "user" (quoted because 'user' can be a reserved keyword)
+-- 5) person (quoted because 'user' can be a reserved keyword)
 ----------------------------------------------------------------
 CREATE TABLE person (
     id_user                TEXT PRIMARY KEY,
@@ -81,7 +81,7 @@ CREATE TABLE user_category (
     user_level   TEXT NOT NULL,
     deleted      INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (id_user, id_category),
-    FOREIGN KEY (id_user)     REFERENCES "user"(id_user),
+    FOREIGN KEY (id_user)     REFERENCES person(id_user),
     FOREIGN KEY (id_category) REFERENCES category(id_category),
     FOREIGN KEY (user_level)  REFERENCES level(level_name)
 );
@@ -109,7 +109,7 @@ CREATE TABLE tournament_registration (
     deleted              INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (id_tournament, id_user),
     FOREIGN KEY (id_tournament) REFERENCES tournament(id_tournament),
-    FOREIGN KEY (id_user)       REFERENCES "user"(id_user)
+    FOREIGN KEY (id_user)       REFERENCES person(id_user)
 );
 
 ----------------------------------------------------------------
@@ -123,7 +123,7 @@ CREATE TABLE tournament_attendance (
     deleted             INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (id_tournament, id_user),
     FOREIGN KEY (id_tournament) REFERENCES tournament(id_tournament),
-    FOREIGN KEY (id_user)       REFERENCES "user"(id_user)
+    FOREIGN KEY (id_user)       REFERENCES person(id_user)
 );
 
 ----------------------------------------------------------------
@@ -152,7 +152,7 @@ CREATE TABLE training_registration (
     deleted             INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (id_training, id_user),
     FOREIGN KEY (id_training) REFERENCES training(id_training),
-    FOREIGN KEY (id_user)     REFERENCES "user"(id_user)
+    FOREIGN KEY (id_user)     REFERENCES person(id_user)
 );
 
 ----------------------------------------------------------------
@@ -164,7 +164,7 @@ CREATE TABLE tuition (
     amount       REAL NOT NULL,
     payment_date TEXT NOT NULL,  -- Example: 'YYYY-MM-DD HH:MM:SS'
     deleted      INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY (id_user) REFERENCES "user"(id_user)
+    FOREIGN KEY (id_user) REFERENCES person(id_user)
 );
 "#
     .to_string()

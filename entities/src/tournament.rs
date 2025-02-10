@@ -3,7 +3,7 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Tournament {
     pub id_tournament: Uuid,
     pub name: String,
@@ -15,7 +15,7 @@ pub struct Tournament {
     pub deleted: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct TournamentRegistration {
     pub id_tournament: Uuid,
     pub id_user: Uuid,
@@ -24,7 +24,7 @@ pub struct TournamentRegistration {
     pub deleted: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct TournamentAttendance {
     pub id_tournament: Uuid,
     pub id_user: Uuid,
