@@ -309,7 +309,7 @@ mod test {
 
     use entities::{
         tournament::{Tournament, TournamentAttendance, TournamentRegistration},
-        user::User,
+        user::{URol, User},
     };
     use libsql::params;
     use rstest::{fixture, rstest};
@@ -339,6 +339,10 @@ mod test {
             email: "test@example.com".to_string(),
             phone_number: "1234567890".to_string(),
             identification_number: "ID123456".to_string(),
+            password: "password".to_string(),
+            country_code: "CO".to_string(),
+            identification_type: entities::user::IdType::CC,
+            user_rol: URol::ADMIN,
             ..User::default()
         };
 
@@ -346,8 +350,8 @@ mod test {
             .await
             .expect("Failed to create test user");
 
-        // Create a test category
         let conn = db.get_connection().await.expect("Failed to get connection");
+
         let category_id = uuid!("123e4567-e89b-12d3-a456-426614174000");
         conn.execute(
             "INSERT OR IGNORE INTO category (id_category, name, min_age, max_age, deleted) 
@@ -362,6 +366,62 @@ mod test {
         )
         .await
         .expect("Failed to create test category");
+
+        conn.execute(
+            "INSERT OR IGNORE INTO level (level_name, deleted) 
+             VALUES (?1, ?2)",
+            params!["Beginner".to_string(), 0],
+        )
+        .await
+        .expect("Failed to create test level");
+
+        conn.execute(
+            "INSERT OR IGNORE INTO user_category (id_user, id_category, user_level, deleted) 
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                user.id_user.to_string(),
+                category_id.to_string(),
+                "Beginner".to_string(),
+                0
+            ],
+        )
+        .await
+        .expect("Failed to create user-category association");
+
+        let tournament_id = uuid!("25ab815d-8f40-48ff-9f75-06b2da90e2fc");
+
+        let tournament = Tournament {
+            id_tournament: tournament_id,
+            name: "Tournament test".to_string(),
+            id_category: uuid!("123e4567-e89b-12d3-a456-426614174000"),
+            start_datetime: chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
+            end_datetime: chrono::DateTime::from_timestamp(86400, 0)
+                .unwrap()
+                .naive_utc(),
+            deleted: false,
+        };
+
+        db.create_tournament(&tournament)
+            .await
+            .expect("Error creating tournament");
+
+        let user_id = uuid!("516e4310-720a-4d41-afa6-772426dc91ba");
+
+        let user = User {
+            id_user: user_id,
+            email: "test_final@example.com".to_string(),
+            phone_number: "123456789099".to_string(),
+            identification_number: "ID123456h".to_string(),
+            password: "passwordo".to_string(),
+            country_code: "CO".to_string(),
+            identification_type: entities::user::IdType::CC,
+            user_rol: URol::ADMIN,
+            ..User::default()
+        };
+
+        db.create_user(&user)
+            .await
+            .expect("Failed to create test user");
 
         db
     }
@@ -401,7 +461,7 @@ mod test {
     #[tokio::test]
     async fn test_get_tournament_by_id(repository: impl Future<Output = TursoDb>) {
         let tournament_id = Uuid::new_v4();
-        let category_id = Uuid::new_v4();
+        let category_id = uuid!("123e4567-e89b-12d3-a456-426614174000");
         let db = repository.await;
 
         let tournament = Tournament {
@@ -439,7 +499,7 @@ mod test {
     #[tokio::test]
     async fn test_update_tournament(repository: impl Future<Output = TursoDb>) {
         let tournament_id = Uuid::new_v4();
-        let category_id = Uuid::new_v4();
+        let category_id = uuid!("123e4567-e89b-12d3-a456-426614174000");
         let db = repository.await;
 
         let mut tournament = Tournament {
@@ -480,7 +540,7 @@ mod test {
     #[tokio::test]
     async fn test_delete_tournament(repository: impl Future<Output = TursoDb>) {
         let tournament_id = Uuid::new_v4();
-        let category_id = Uuid::new_v4();
+        let category_id = uuid!("123e4567-e89b-12d3-a456-426614174000");
         let db = repository.await;
 
         let tournament = Tournament {
@@ -537,7 +597,7 @@ mod test {
         let tournament2 = Tournament {
             id_tournament: Uuid::new_v4(),
             name: "Tournament 2".to_string(),
-            id_category: Uuid::new_v4(),
+            id_category: uuid!("123e4567-e89b-12d3-a456-426614174000"),
             start_datetime: chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
             end_datetime: chrono::DateTime::from_timestamp(86400, 0)
                 .unwrap()
@@ -578,8 +638,9 @@ mod test {
     #[rstest]
     #[tokio::test]
     async fn test_register_user_for_tournament(repository: impl Future<Output = TursoDb>) {
-        let tournament_id = Uuid::new_v4();
         let db = repository.await;
+
+        let tournament_id = uuid!("25ab815d-8f40-48ff-9f75-06b2da90e2fc");
 
         // Get the test user ID
         let user_id = db
@@ -611,7 +672,7 @@ mod test {
     #[rstest]
     #[tokio::test]
     async fn test_record_tournament_attendance(repository: impl Future<Output = TursoDb>) {
-        let tournament_id = Uuid::new_v4();
+        let tournament_id = uuid!("25ab815d-8f40-48ff-9f75-06b2da90e2fc");
         let db = repository.await;
 
         // Get the test user ID
@@ -645,8 +706,8 @@ mod test {
     #[rstest]
     #[tokio::test]
     async fn test_update_tournament_position(repository: impl Future<Output = TursoDb>) {
-        let tournament_id = Uuid::new_v4();
-        let user_id = Uuid::new_v4();
+        let tournament_id = uuid!("25ab815d-8f40-48ff-9f75-06b2da90e2fc");
+        let user_id = uuid!("516e4310-720a-4d41-afa6-772426dc91ba");
         let db = repository.await;
 
         let attendance = TournamentAttendance {
