@@ -12,4 +12,12 @@ pub enum Error {
     ErrorHashing(String),
     #[error("Error verifying hash")]
     ErrorVerificationHash(String),
+    #[error("Error in password")]
+    InvalidPassword,
+    #[error("Email already exists")]
+    EmailAlreadyExists,
+    #[error("Phone number already exists")]
+    PhoneAlreadyExists,
+    #[error("Document already exists")]
+    DocumentAlreadyExists,
 }

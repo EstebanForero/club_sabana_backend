@@ -34,13 +34,15 @@ async fn main() {
         .inspect_err(|err| error!("Error creating turso db: {err}"))
         .expect("Error creating turso db");
 
-    let user_service = UserService::new(Arc::new(turso_db));
+    let password_hasher = bcrypt_hasher::BcryptHasher;
+
+    let user_service = UserService::new(Arc::new(turso_db), Arc::new(password_hasher));
 
     main_router = main_router.merge(user_endpoints::user_router(user_service));
 
-    let corsLayer = CorsLayer::permissive();
+    let cors_layer = CorsLayer::permissive();
 
-    main_router = main_router.layer(corsLayer);
+    main_router = main_router.layer(cors_layer);
 
     let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), config.port);
 

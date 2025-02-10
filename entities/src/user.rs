@@ -122,7 +122,7 @@ pub struct DocInfo {
     pub identification_type: IdType,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, EnumStr)]
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, EnumStr, Clone)]
 pub enum IdType {
     #[default]
     CC,

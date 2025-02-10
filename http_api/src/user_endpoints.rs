@@ -50,5 +50,9 @@ fn message_from_err(err: Error, endpoint_name: &str) -> &'static str {
             error!("{endpoint_name}: {error}");
             "We are having problems in the server, try again"
         }
+        Error::InvalidPassword => "The password is invalid, try again",
+        Error::EmailAlreadyExists => "Email is already in use, try with other email",
+        Error::PhoneAlreadyExists => "Phone is already in use, try with other phone",
+        Error::DocumentAlreadyExists => "Document is already in use, try with other document",
     }
 }

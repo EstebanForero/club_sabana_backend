@@ -1,7 +1,7 @@
 use super::err::Result;
 
-pub trait PasswordHasher {
-    fn hash(content: &str) -> Result<&str>;
+pub trait PasswordHasher: Send + Sync {
+    fn hash(&self, content: &str) -> Result<String>;
 
-    fn verify(original: &str, hashed: &str) -> Result<bool>;
+    fn verify(&self, original: &str, hashed: &str) -> Result<bool>;
 }
