@@ -8,9 +8,10 @@ use serde::Deserialize;
 use tower_http::cors::{Cors, CorsLayer};
 use tracing::{error, info};
 use turso_db::TursoDb;
-use use_cases::user_service::UserService;
+use use_cases::{tournament_service::TournamentService, user_service::UserService};
 
 mod auth;
+mod tournament_endpoints;
 mod user_endpoints;
 
 #[derive(Debug, Deserialize)]
@@ -37,9 +38,16 @@ async fn main() {
 
     let password_hasher = bcrypt_hasher::BcryptHasher;
 
-    let user_service = UserService::new(Arc::new(turso_db), Arc::new(password_hasher));
+    let user_service = UserService::new(Arc::new(turso_db.clone()), Arc::new(password_hasher));
+    let tournament_service = TournamentService::new(
+        Arc::new(turso_db.clone()),
+        Arc::new(turso_db.clone()),
+        Arc::new(turso_db.clone()),
+    );
 
     main_router = main_router.merge(user_endpoints::user_router(user_service, &config.token_key));
+
+    main_router = main_router.merge(tournament_endpoints::tournament_router(tournament_service));
 
     let cors_layer = CorsLayer::permissive();
 
