@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 /// Trait defining tournament-related operations
 #[async_trait]
-pub trait TournamentRepository {
+pub trait TournamentRepository: Send + Sync {
     async fn create_tournament(&self, tournament: &Tournament) -> Result<()>;
     async fn get_tournament_by_id(&self, id: Uuid) -> Result<Option<Tournament>>;
     async fn update_tournament(&self, tournament: &Tournament) -> Result<()>;
@@ -14,7 +14,7 @@ pub trait TournamentRepository {
 }
 
 #[async_trait]
-pub trait TournamentRegistrationRepository {
+pub trait TournamentRegistrationRepository: Send + Sync {
     async fn register_user_for_tournament(
         &self,
         registration: &TournamentRegistration,
@@ -26,7 +26,7 @@ pub trait TournamentRegistrationRepository {
 }
 
 #[async_trait]
-pub trait TournamentAttendanceRepository {
+pub trait TournamentAttendanceRepository: Send + Sync {
     async fn record_tournament_attendance(&self, attendance: &TournamentAttendance) -> Result<()>;
     async fn get_tournament_attendance(
         &self,

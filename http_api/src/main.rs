@@ -11,6 +11,7 @@ use turso_db::TursoDb;
 use use_cases::user_service::UserService;
 
 mod auth;
+mod tournament_endpoints;
 mod user_endpoints;
 
 #[derive(Debug, Deserialize)]
