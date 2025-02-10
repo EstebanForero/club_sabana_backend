@@ -6,6 +6,10 @@ use axum::{
     Json, Router,
 };
 
+fn internal_error_response(message: &str) -> Response {
+    (StatusCode::INTERNAL_SERVER_ERROR, message.to_string()).into_response()
+}
+
 use entities::user::{URol, UserCreation, UserLogInInfo};
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -38,15 +42,15 @@ struct LogInResponse {
 async fn log_in_user(
     State((user_service, token_key)): State<(UserService, String)>,
     Json(user_log_in_info): Json<UserLogInInfo>,
-) -> Result<Json<LogInResponse>, String> {
+) -> Result<Json<LogInResponse>, Response> {
     let log_in_response = user_service
         .log_in_user(&user_log_in_info)
         .await
-        .map_err(|err| message_from_err(err, "log in user"))?;
+        .map_err(|err| internal_error_response(&message_from_err(err, "log in user")))?;
 
     let token = generate_jwt(&log_in_response, &token_key).map_err(|err| {
         error!("Error log in user, generating jwt: {}", err.to_string());
-        "Internal error generating token".to_string()
+        internal_error_response("Internal error generating token")
     })?;
 
     Ok(Json(LogInResponse {
