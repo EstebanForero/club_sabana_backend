@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use entities::user::{IdType, User};
 use libsql::{de, params};
-use use_cases::user_service::err::Result;
+use use_cases::user_service::err::{Error, Result};
 use use_cases::user_service::repository_trait::UserRepository;
 use uuid::Uuid;
 
@@ -10,7 +10,10 @@ use crate::TursoDb;
 #[async_trait]
 impl UserRepository for TursoDb {
     async fn create_user(&self, user: &User) -> Result<()> {
-        let conn = self.get_connection().await?;
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
 
         conn.execute(
             "INSERT INTO person (
@@ -38,13 +41,16 @@ impl UserRepository for TursoDb {
             ],
         )
         .await
-        .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?;
+        .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
 
         Ok(())
     }
 
     async fn get_user_by_id(&self, id: Uuid) -> Result<Option<User>> {
-        let conn = self.get_connection().await?;
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("connection error: {err}")))?;
 
         let mut rows = conn
             .query(
@@ -53,16 +59,16 @@ email_verified, phone_number, country_code, password, identification_number, ide
                 params![id.to_string()],
             )
             .await
-            .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?;
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
 
         if let Some(row_result) = rows
             .next()
             .await
-            .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
         {
             let row = row_result;
             let user = de::from_row::<User>(&row)
-                .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?;
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
             Ok(Some(user))
         } else {
             Ok(None)
@@ -70,7 +76,10 @@ email_verified, phone_number, country_code, password, identification_number, ide
     }
 
     async fn get_user_id_by_email(&self, email: &str) -> Result<Option<Uuid>> {
-        let conn = self.get_connection().await?;
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
 
         let mut rows = conn
             .query(
@@ -79,19 +88,19 @@ email_verified, phone_number, country_code, password, identification_number, ide
                 params![email],
             )
             .await
-            .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?;
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
 
         if let Some(row_result) = rows
             .next()
             .await
-            .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
         {
             let id_str: String = row_result
                 .get(0)
-                .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?;
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
 
             let uuid = Uuid::parse_str(&id_str)
-                .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?;
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
             Ok(Some(uuid))
         } else {
             Ok(None)
@@ -99,7 +108,10 @@ email_verified, phone_number, country_code, password, identification_number, ide
     }
 
     async fn get_user_id_by_phone(&self, phone_number: &str) -> Result<Option<Uuid>> {
-        let conn = self.get_connection().await?;
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
 
         let mut rows = conn
             .query(
@@ -108,20 +120,19 @@ email_verified, phone_number, country_code, password, identification_number, ide
                 params![phone_number],
             )
             .await
-            .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?;
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
 
         if let Some(row_result) = rows
             .next()
             .await
-            .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
         {
             let id_str: String = row_result
                 .get(0)
-                .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?;
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
 
             let uuid = Uuid::parse_str(&id_str)
-                .map_err(|err| Box::new(err))
-                .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?;
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
             Ok(Some(uuid))
         } else {
             Ok(None)
@@ -133,7 +144,10 @@ email_verified, phone_number, country_code, password, identification_number, ide
         identification_number: &str,
         identification_type: &IdType,
     ) -> Result<Option<Uuid>> {
-        let conn = self.get_connection().await?;
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
 
         let mut rows = conn
             .query(
@@ -144,19 +158,18 @@ AND deleted = 0",
                 params![identification_number, identification_type.to_string()],
             )
             .await
-            .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?;
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
 
         if let Some(row_result) = rows
             .next()
             .await
-            .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
         {
             let id_str: String = row_result
                 .get(0)
-                .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?;
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
             let uuid = Uuid::parse_str(&id_str)
-                .map_err(|err| Box::new(err))
-                .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?;
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
             Ok(Some(uuid))
         } else {
             Ok(None)
@@ -164,7 +177,10 @@ AND deleted = 0",
     }
 
     async fn update_user(&self, user: &User) -> Result<()> {
-        let conn = self.get_connection().await?;
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
 
         conn.execute(
             "UPDATE person SET 
@@ -202,26 +218,32 @@ WHERE id_user = ?14",
             ],
         )
         .await
-        .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?;
+        .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
 
         Ok(())
     }
 
     async fn delete_user(&self, id: Uuid) -> Result<()> {
-        let conn = self.get_connection().await?;
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
 
         conn.execute(
             "UPDATE person SET deleted = 1 WHERE id_user = ?1",
             params![id.to_string()],
         )
         .await
-        .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?;
+        .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
 
         Ok(())
     }
 
     async fn list_users(&self) -> Result<Vec<User>> {
-        let conn = self.get_connection().await?;
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
 
         let mut rows = conn
             .query(
@@ -233,16 +255,16 @@ WHERE deleted = 0",
                 params![],
             )
             .await
-            .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?;
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
 
         let mut users = Vec::new();
         while let Some(row_result) = rows
             .next()
             .await
-            .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
         {
             let user = de::from_row::<User>(&row_result)
-                .map_err::<Box<dyn std::error::Error>, _>(|err| Box::new(err))?;
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
             users.push(user);
         }
 

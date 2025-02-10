@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -5,7 +7,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Unknow error in the database: {0}")]
-    UnknownDatabaseError(#[from] Box<dyn std::error::Error>),
+    UnknownDatabaseError(String),
     #[error("User do not exists")]
     UserIdDontExist,
     #[error("Error hashing")]
@@ -20,4 +22,6 @@ pub enum Error {
     PhoneAlreadyExists,
     #[error("Document already exists")]
     DocumentAlreadyExists,
+    #[error("Invalid identifier")]
+    InvalidIdentifier,
 }

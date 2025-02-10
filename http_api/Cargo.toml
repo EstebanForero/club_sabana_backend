@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = "0.8.1"
 use_cases = { path = "../use_cases" }
 entities = { path = "../entities" }
 tracing = "0.1.41"
@@ -16,3 +15,7 @@ dotenvy = "0.15.7"
 envy = "0.4.2"
 tower-http = { version = "0.6.2", features = ["cors"] }
 bcrypt_hasher = { path = "../bcrypt_hasher" }
+jsonwebtoken = "9.3.1"
+chrono = "0.4.39"
+uuid = { version = "1.13.1", features = ["v4"] }
+axum = "0.8.1"

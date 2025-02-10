@@ -7,8 +7,10 @@ use repository_trait::UserRepository;
 pub mod err;
 pub mod hasher_trait;
 pub mod repository_trait;
+mod unique_identifier;
 
 use err::{Error, Result};
+use unique_identifier::{EmailIdentifier, Identifier, PhoneIdentifier};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -17,6 +19,7 @@ pub struct UserService {
     password_hasher: Arc<dyn PasswordHasher>,
 }
 
+#[derive(Clone, Debug)]
 pub struct LogInResponse {
     pub user_id: Uuid,
     pub user_rol: URol,
@@ -83,17 +86,18 @@ impl UserService {
         }
     }
 
-    pub async fn log_in_user(&self, user_log_in_info: UserLogInInfo) -> Result<LogInResponse> {
-        let identifier = user_log_in_info.identifier;
+    pub async fn log_in_user(&self, user_log_in_info: &UserLogInInfo) -> Result<LogInResponse> {
+        let identifier = &user_log_in_info.identifier;
 
-        let user_id =
-            if let Some(user_id) = self.user_repo.get_user_id_by_email(&identifier).await? {
-                user_id
-            } else if let Some(user_id) = self.user_repo.get_user_id_by_phone(&identifier).await? {
-                user_id
-            } else {
-                return Err(Error::UserIdDontExist);
-            };
+        let email_identifier: Arc<dyn Identifier> =
+            Arc::new(EmailIdentifier::new(self.user_repo.clone(), None));
+
+        let phone_identifier: Arc<dyn Identifier> = Arc::new(PhoneIdentifier::new(
+            self.user_repo.clone(),
+            Some(email_identifier),
+        ));
+
+        let user_id = phone_identifier.identify(identifier).await?;
 
         let user_info = match self.user_repo.get_user_by_id(user_id).await? {
             Some(user_info) => user_info,

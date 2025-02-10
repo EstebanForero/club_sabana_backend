@@ -110,7 +110,7 @@ pub enum IdentifierType {
     Identification(IdentificationInfo),
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone)]
 pub struct UserLogInInfo {
     pub identifier: String,
     pub password: String,
@@ -128,7 +128,7 @@ pub enum IdType {
     CC,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, EnumStr)]
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, EnumStr, Clone)]
 pub enum URol {
     #[default]
     USER,

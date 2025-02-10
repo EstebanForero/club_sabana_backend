@@ -10,6 +10,7 @@ use tracing::{error, info};
 use turso_db::TursoDb;
 use use_cases::user_service::UserService;
 
+mod auth;
 mod user_endpoints;
 
 #[derive(Debug, Deserialize)]
@@ -38,7 +39,7 @@ async fn main() {
 
     let user_service = UserService::new(Arc::new(turso_db), Arc::new(password_hasher));
 
-    main_router = main_router.merge(user_endpoints::user_router(user_service));
+    main_router = main_router.merge(user_endpoints::user_router(user_service, &config.token_key));
 
     let cors_layer = CorsLayer::permissive();
 
