@@ -77,7 +77,7 @@ impl CategoryService {
             .category_repo
             .get_category_by_name(&category.name)
             .await?
-            .is_none()
+            .is_some()
         {
             return Err(Error::CategoryAlreadyExists);
         }
