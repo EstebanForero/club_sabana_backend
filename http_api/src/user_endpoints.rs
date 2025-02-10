@@ -1,5 +1,5 @@
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -10,10 +10,11 @@ fn internal_error_response(message: &str) -> Response {
     (StatusCode::INTERNAL_SERVER_ERROR, message.to_string()).into_response()
 }
 
-use entities::user::{URol, UserCreation, UserLogInInfo};
+use entities::user::{URol, UserCreation, UserInfo, UserLogInInfo};
 use serde::{Deserialize, Serialize};
 use tracing::error;
 use use_cases::user_service::{err::Error, UserService};
+use uuid::Uuid;
 
 use crate::auth::generate_jwt;
 
@@ -22,7 +23,32 @@ pub fn user_router(user_service: UserService, token_key: &str) -> Router {
         .route("/health", get(alive))
         .route("/register", post(register_user))
         .route("/logIn", post(log_in_user))
+        .route("/users", get(get_all_users))
+        .route("/users/{id}", get(get_user_by_id))
         .with_state((user_service, token_key.to_string()))
+}
+
+async fn get_all_users(
+    State((user_service, _)): State<(UserService, String)>,
+) -> Result<Json<Vec<UserInfo>>, Response> {
+    let users = user_service
+        .get_all_users()
+        .await
+        .map_err(|err| internal_error_response(&message_from_err(err, "get all users")))?;
+
+    Ok(Json(users))
+}
+
+async fn get_user_by_id(
+    State((user_service, _)): State<(UserService, String)>,
+    Path(user_id): Path<Uuid>,
+) -> Result<Json<UserInfo>, Response> {
+    let user = user_service
+        .get_user_by_id(user_id)
+        .await
+        .map_err(|err| internal_error_response(&message_from_err(err, "get user by id")))?;
+
+    Ok(Json(user))
 }
 
 async fn alive() -> Result<Json<String>, Response> {
