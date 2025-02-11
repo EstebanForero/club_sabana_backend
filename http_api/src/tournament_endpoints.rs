@@ -6,8 +6,7 @@ use axum::{
     Json, Router,
 };
 use entities::tournament::{
-    Tournament, TournamentAttendance, TournamentAttendanceDTO, TournamentDTO,
-    TournamentRegistration, TournamentRegistrationDTO,
+    Tournament, TournamentAttendanceDTO, TournamentDTO, TournamentRegistrationDTO,
 };
 use tracing::error;
 use use_cases::tournament_service::{err::Error, TournamentService};
