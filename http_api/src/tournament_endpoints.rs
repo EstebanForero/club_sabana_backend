@@ -19,7 +19,7 @@ fn internal_error_response(message: &str) -> Response {
 
 pub fn tournament_router(tournament_service: TournamentService) -> Router {
     Router::new()
-        .route("/health", get(alive))
+        .route("/health-tournament", get(alive))
         .route(
             "/tournaments",
             post(create_tournament).get(list_tournaments),

@@ -20,7 +20,7 @@ use crate::auth::generate_jwt;
 
 pub fn user_router(user_service: UserService, token_key: &str) -> Router {
     Router::new()
-        .route("/health", get(alive))
+        .route("/health-user", get(alive))
         .route("/register", post(register_user))
         .route("/logIn", post(log_in_user))
         .route("/users", get(get_all_users))
