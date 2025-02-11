@@ -5,7 +5,10 @@ use axum::{
     routing::{delete, get, post, put},
     Json, Router,
 };
-use entities::category::{Category, CategoryRequirement};
+use entities::{
+    category::{Category, CategoryRequirement},
+    user::UserCategory,
+};
 use tracing::error;
 use use_cases::category_service::{err::Error, CategoryService};
 use uuid::Uuid;
@@ -39,13 +42,13 @@ async fn alive() -> &'static str {
 async fn create_category(
     State(category_service): State<CategoryService>,
     Json(category): Json<Category>,
-) -> Result<Json<Category>, Response> {
+) -> Result<(), Response> {
     category_service
-        .add_category(&category)
+        .add_category(category)
         .await
         .map_err(|err| internal_error_response(&message_from_err(err, "create category")))?;
 
-    Ok(Json(category))
+    Ok(())
 }
 
 async fn get_category(
@@ -135,7 +138,7 @@ async fn get_user_category(
 
 fn message_from_err(err: Error, endpoint_name: &str) -> String {
     let error_msg = match err {
-        Error::DatabaseError(error) => {
+        Error::UnknownDatabaseError(error) => {
             error!("{endpoint_name}: {error}");
             "We are having problems in the server, try again"
         }

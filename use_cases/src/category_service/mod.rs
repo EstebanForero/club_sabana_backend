@@ -12,9 +12,9 @@ pub mod repository_trait;
 
 #[derive(Clone)]
 pub struct CategoryService {
-    category_repo: Arc<dyn CategoryRepository + Send + Sync>,
-    requirement_repo: Arc<dyn CategoryRequirementRepository + Send + Sync>,
-    user_category_repo: Arc<dyn UserCategoryRepository + Send + Sync>,
+    category_repo: Arc<dyn CategoryRepository>,
+    requirement_repo: Arc<dyn CategoryRequirementRepository>,
+    user_category_repo: Arc<dyn UserCategoryRepository>,
 }
 
 impl CategoryService {
@@ -70,6 +70,21 @@ impl CategoryService {
 
     pub async fn get_all_categories(&self) -> Result<Vec<Category>> {
         self.category_repo.list_categories().await
+    }
+
+    pub async fn add_category(&self, category: Category) -> Result<()> {
+        if self
+            .category_repo
+            .get_category_by_name(&category.name)
+            .await?
+            .is_none()
+        {
+            return Err(Error::CategoryAlreadyExists);
+        }
+
+        self.category_repo.create_category(&category).await?;
+
+        Ok(())
     }
 
     pub async fn add_category_requirement(&self, category_req: &CategoryRequirement) -> Result<()> {

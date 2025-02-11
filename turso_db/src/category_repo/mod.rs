@@ -1,12 +1,46 @@
 use async_trait::async_trait;
 use entities::category::Category;
+use entities::user::UserCategory;
 use libsql::{de, params};
 use use_cases::category_service::err::{Error, Result};
-use use_cases::category_service::repository_trait::CategoryRepository;
+use use_cases::category_service::repository_trait::{CategoryRepository, UserCategoryRepository};
 
 use uuid::Uuid;
 
 use crate::TursoDb;
+
+#[async_trait]
+impl UserCategoryRepository for TursoDb {
+    async fn get_user_category(
+        &self,
+        id_user: Uuid,
+        id_category: Uuid,
+    ) -> Result<Option<UserCategory>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT id_category, id_user, deleted, user_level FROM category WHERE id_category = 1? AND id_user = 2? AND deleted = 0",
+                params![id_user.to_string(), id_category.to_string()],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        if let Some(rows_res) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?
+        {
+            let category = de::from_row::<UserCategory>(&rows_res)
+                .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+            return Ok(Some(category));
+        }
+        Ok(None)
+    }
+}
 
 #[async_trait]
 impl CategoryRepository for TursoDb {

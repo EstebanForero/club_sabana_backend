@@ -8,7 +8,10 @@ use serde::Deserialize;
 use tower_http::cors::{Cors, CorsLayer};
 use tracing::{error, info};
 use turso_db::TursoDb;
-use use_cases::{tournament_service::TournamentService, user_service::UserService};
+use use_cases::{
+    category_service::CategoryService, tournament_service::TournamentService,
+    user_service::UserService,
+};
 
 mod auth;
 mod category_endpoints;
@@ -41,6 +44,11 @@ async fn main() {
 
     let user_service = UserService::new(Arc::new(turso_db.clone()), Arc::new(password_hasher));
     let tournament_service = TournamentService::new(
+        Arc::new(turso_db.clone()),
+        Arc::new(turso_db.clone()),
+        Arc::new(turso_db.clone()),
+    );
+    let category_service = CategoryService::new(
         Arc::new(turso_db.clone()),
         Arc::new(turso_db.clone()),
         Arc::new(turso_db.clone()),
