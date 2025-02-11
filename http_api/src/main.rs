@@ -5,7 +5,7 @@ use std::{
 
 use axum::Router;
 use serde::Deserialize;
-use tower_http::cors::{Cors, CorsLayer};
+use tower_http::cors::CorsLayer;
 use tracing::{error, info};
 use turso_db::TursoDb;
 use use_cases::{
@@ -57,6 +57,8 @@ async fn main() {
     main_router = main_router.merge(user_endpoints::user_router(user_service, &config.token_key));
 
     main_router = main_router.merge(tournament_endpoints::tournament_router(tournament_service));
+
+    main_router = main_router.merge(category_endpoints::category_router(category_service));
 
     let cors_layer = CorsLayer::permissive();
 
