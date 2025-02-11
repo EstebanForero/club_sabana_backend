@@ -77,9 +77,9 @@ where
     async fn get_user_category(
         &self,
         user_id: Uuid,
-        user_category: Uuid,
+        category_id: Uuid,
     ) -> Result<Option<UserCategory>> {
-        self.db.get_user_category(user_id, user_category).await
+        self.db.get_user_category(user_id, category_id).await
     }
 
     // get user categories it is elegible to

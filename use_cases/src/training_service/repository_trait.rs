@@ -1,13 +1,15 @@
 use super::err::Result;
+use async_trait::async_trait;
 use entities::training::{Training, TrainingRegistration};
 use uuid::Uuid;
 
+#[async_trait]
 pub trait TrainingRepository {
-    fn create_training(&self, training: &Training) -> Result<()>;
-    fn get_training_by_id(&self, id: Uuid) -> Result<Option<Training>>;
-    fn update_training(&self, training: &Training) -> Result<()>;
-    fn delete_training(&self, id: Uuid) -> Result<()>; // Soft delete
-    fn list_trainings(&self) -> Result<Vec<Training>>;
+    async fn create_training(&self, training: &Training) -> Result<()>;
+    async fn get_training_by_id(&self, id: Uuid) -> Result<Option<Training>>;
+    async fn update_training(&self, training: &Training) -> Result<()>;
+    async fn delete_training(&self, id: Uuid) -> Result<()>; // Soft delete
+    async fn list_trainings(&self) -> Result<Vec<Training>>;
 }
 
 pub trait TrainingRegistrationRepository {
