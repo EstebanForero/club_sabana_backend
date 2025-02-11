@@ -12,12 +12,16 @@ pub trait TrainingRepository {
     async fn list_trainings(&self) -> Result<Vec<Training>>;
 }
 
+#[async_trait]
 pub trait TrainingRegistrationRepository {
-    fn register_user_for_training(&self, registration: &TrainingRegistration) -> Result<()>;
+    async fn register_user_for_training(&self, registration: &TrainingRegistration) -> Result<()>;
 
-    fn get_training_registrations(&self, training_id: Uuid) -> Result<Vec<TrainingRegistration>>;
+    async fn get_training_registrations(
+        &self,
+        training_id: Uuid,
+    ) -> Result<Vec<TrainingRegistration>>;
 
-    fn mark_training_attendance(
+    async fn mark_training_attendance(
         &self,
         training_id: Uuid,
         user_id: Uuid,

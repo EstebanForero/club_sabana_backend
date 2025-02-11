@@ -19,9 +19,9 @@ pub struct CategoryService {
 
 impl CategoryService {
     pub fn new(
-        category_repo: Arc<dyn CategoryRepository + Send + Sync>,
-        requirement_repo: Arc<dyn CategoryRequirementRepository + Send + Sync>,
-        user_category_repo: Arc<dyn UserCategoryRepository + Send + Sync>,
+        category_repo: Arc<dyn CategoryRepository>,
+        requirement_repo: Arc<dyn CategoryRequirementRepository>,
+        user_category_repo: Arc<dyn UserCategoryRepository>,
     ) -> Self {
         Self {
             category_repo,
