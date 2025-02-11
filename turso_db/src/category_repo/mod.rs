@@ -1,13 +1,68 @@
 use async_trait::async_trait;
-use entities::category::Category;
+use entities::category::{Category, CategoryRequirement};
 use entities::user::UserCategory;
 use libsql::{de, params};
 use use_cases::category_service::err::{Error, Result};
-use use_cases::category_service::repository_trait::{CategoryRepository, UserCategoryRepository};
+use use_cases::category_service::repository_trait::{
+    CategoryRepository, CategoryRequirementRepository, UserCategoryRepository,
+};
 
 use uuid::Uuid;
 
 use crate::TursoDb;
+
+#[async_trait]
+impl CategoryRequirementRepository for TursoDb {
+    async fn create_category_requirement(&self, requirement: &CategoryRequirement) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        conn.execute("INSERT INTO category_requirement (id_category_requirement, id_category, requirement_description,
+required_level, deleted) VALUES (1?, 2?, 3?, 4?, 5?)",
+            params![requirement.id_category_requirement.to_string(), requirement.id_category.to_string(),
+                requirement.requirement_description.to_string(),
+            requirement.required_level.to_string()]).await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn get_category_requirements(
+        &self,
+        category_id: Uuid,
+    ) -> Result<Vec<CategoryRequirement>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT id_category_requirement, id_category, requirement_description, required_level, deleted 
+WHERE deleted = 0 AND id_category = 1?",
+                params![category_id.to_string()],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut res: Vec<CategoryRequirement> = Vec::new();
+
+        while let Some(res_row) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?
+        {
+            res.push(
+                de::from_row::<CategoryRequirement>(&res_row)
+                    .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?,
+            );
+        }
+
+        Ok(res)
+    }
+}
 
 #[async_trait]
 impl UserCategoryRepository for TursoDb {
