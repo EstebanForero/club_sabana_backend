@@ -5,7 +5,10 @@ use axum::{
     routing::{get, post, put},
     Json, Router,
 };
-use entities::tournament::{Tournament, TournamentAttendance, TournamentRegistration};
+use entities::tournament::{
+    Tournament, TournamentAttendance, TournamentAttendanceDTO, TournamentDTO,
+    TournamentRegistration, TournamentRegistrationDTO,
+};
 use tracing::error;
 use use_cases::tournament_service::{err::Error, TournamentService};
 use uuid::Uuid;
@@ -33,14 +36,23 @@ pub fn tournament_router(tournament_service: TournamentService) -> Router {
         .with_state(tournament_service)
 }
 
-async fn alive() -> Result<Json<String>, Response> {
-    Ok(Json("Tournament router is alive".to_string()))
+async fn alive() -> &'static str {
+    "Tournament service is alive"
 }
 
 async fn create_tournament(
     State(tournament_service): State<TournamentService>,
-    Json(tournament): Json<Tournament>,
+    Json(tournament_dto): Json<TournamentDTO>,
 ) -> Result<(), Response> {
+    let tournament = Tournament {
+        id_tournament: Uuid::new_v4(),
+        name: tournament_dto.name,
+        id_category: tournament_dto.id_category,
+        start_datetime: tournament_dto.start_datetime,
+        end_datetime: tournament_dto.end_datetime,
+        deleted: false,
+    };
+
     tournament_service
         .create_tournament(tournament)
         .await
@@ -52,7 +64,7 @@ async fn create_tournament(
 async fn get_tournament(
     State(tournament_service): State<TournamentService>,
     Path(id): Path<Uuid>,
-) -> Result<Json<Tournament>, Response> {
+) -> Result<Json<TournamentDTO>, Response> {
     let tournament = tournament_service
         .get_tournament(id)
         .await
@@ -63,7 +75,7 @@ async fn get_tournament(
 
 async fn update_tournament(
     State(tournament_service): State<TournamentService>,
-    Json(tournament): Json<Tournament>,
+    Json(tournament): Json<TournamentDTO>,
 ) -> Result<(), Response> {
     tournament_service
         .update_tournament(tournament)
@@ -87,18 +99,19 @@ async fn delete_tournament(
 
 async fn list_tournaments(
     State(tournament_service): State<TournamentService>,
-) -> Result<Json<Vec<Tournament>>, Response> {
+) -> Result<Json<Vec<TournamentDTO>>, Response> {
     let tournaments = tournament_service
         .list_tournaments()
         .await
         .map_err(|err| internal_error_response(&message_from_err(err, "list tournaments")))?;
 
-    Ok(Json(tournaments))
+    let tournaments_dto = tournaments.into_iter().collect();
+    Ok(Json(tournaments_dto))
 }
 
 async fn register_user(
     State(tournament_service): State<TournamentService>,
-    Json(registration): Json<TournamentRegistration>,
+    Json(registration): Json<TournamentRegistrationDTO>,
 ) -> Result<Json<String>, Response> {
     tournament_service
         .register_user(registration)
@@ -110,7 +123,7 @@ async fn register_user(
 
 async fn record_attendance(
     State(tournament_service): State<TournamentService>,
-    Json(attendance): Json<TournamentAttendance>,
+    Json(attendance): Json<TournamentAttendanceDTO>,
 ) -> Result<Json<String>, Response> {
     tournament_service
         .record_attendance(attendance)
