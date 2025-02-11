@@ -10,76 +10,91 @@ use uuid::Uuid;
 pub mod err;
 pub mod repository_trait;
 
-struct CategoryService<
-    T: CategoryRepository + CategoryRequirementRepository + UserCategoryRepository,
-> {
-    db: Arc<T>,
+#[derive(Clone)]
+pub struct CategoryService {
+    category_repo: Arc<dyn CategoryRepository + Send + Sync>,
+    requirement_repo: Arc<dyn CategoryRequirementRepository + Send + Sync>,
+    user_category_repo: Arc<dyn UserCategoryRepository + Send + Sync>,
 }
 
-impl<T> CategoryService<T>
-where
-    T: CategoryRepository + CategoryRequirementRepository + UserCategoryRepository,
-{
-    pub fn new(db: T) -> Self {
-        Self { db: Arc::new(db) }
+impl CategoryService {
+    pub fn new(
+        category_repo: Arc<dyn CategoryRepository + Send + Sync>,
+        requirement_repo: Arc<dyn CategoryRequirementRepository + Send + Sync>,
+        user_category_repo: Arc<dyn UserCategoryRepository + Send + Sync>,
+    ) -> Self {
+        Self {
+            category_repo,
+            requirement_repo,
+            user_category_repo,
+        }
     }
 
     //  delete_category
     pub async fn delete_category(&self, id: Uuid) -> Result<()> {
-        self.db.delete_category(id).await?;
-
+        self.category_repo.delete_category(id).await?;
         Ok(())
     }
 
-    // add_category
-    pub async fn add_category(&self, category: &Category) -> Result<()> {
-        self.db.create_category(category).await?;
-
-        Ok(())
-    }
-
-    // update_category
     pub async fn update_category(&self, category: &Category) -> Result<()> {
-        self.db.update_category(category).await?;
-
-        Ok(())
-    }
-
-    // get category by id
-    pub async fn get_category_by_id(&self, id: Uuid) -> Result<Category> {
-        let category = self.db.get_category_by_id(id).await?;
-
-        if category.is_none() {
+        // Validate category exists
+        if self
+            .category_repo
+            .get_category_by_id(category.id_category)
+            .await?
+            .is_none()
+        {
             return Err(Error::CategoryNotFound);
         }
 
-        Ok(category.unwrap())
+        // Validate category name
+        if category.name.trim().is_empty() {
+            return Err(Error::MissingName);
+        }
+
+        // Validate age range
+        if category.min_age >= category.max_age {
+            return Err(Error::InvalidAgeRange);
+        }
+
+        self.category_repo.update_category(category).await?;
+        Ok(())
     }
-    // list categories
+
+    pub async fn get_category_by_id(&self, id: Uuid) -> Result<Category> {
+        self.category_repo
+            .get_category_by_id(id)
+            .await?
+            .ok_or(Error::CategoryNotFound)
+    }
+
     pub async fn get_all_categories(&self) -> Result<Vec<Category>> {
-        self.db.list_categories().await
+        self.category_repo.list_categories().await
     }
 
-    // add category requirement
     pub async fn add_category_requirement(&self, category_req: &CategoryRequirement) -> Result<()> {
-        self.db.create_category_requirement(category_req).await
+        self.requirement_repo
+            .create_category_requirement(category_req)
+            .await
     }
 
-    // get_category_requirements
     pub async fn get_category_requirements(
         &self,
         category_id: Uuid,
     ) -> Result<Vec<CategoryRequirement>> {
-        self.db.get_category_requirements(category_id).await
+        self.requirement_repo
+            .get_category_requirements(category_id)
+            .await
     }
 
-    // get_user_category
-    async fn get_user_category(
+    pub async fn get_user_category(
         &self,
         user_id: Uuid,
         category_id: Uuid,
     ) -> Result<Option<UserCategory>> {
-        self.db.get_user_category(user_id, category_id).await
+        self.user_category_repo
+            .get_user_category(user_id, category_id)
+            .await
     }
 
     // get user categories it is elegible to

@@ -11,6 +11,7 @@ use turso_db::TursoDb;
 use use_cases::{tournament_service::TournamentService, user_service::UserService};
 
 mod auth;
+mod category_endpoints;
 mod tournament_endpoints;
 mod user_endpoints;
 
