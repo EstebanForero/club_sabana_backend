@@ -20,7 +20,7 @@ impl CategoryRequirementRepository for TursoDb {
             .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
 
         conn.execute("INSERT INTO category_requirement (id_category_requirement, id_category, requirement_description,
-required_level, deleted) VALUES (1?, 2?, 3?, 4?, 5?)",
+required_level, deleted) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![requirement.id_category_requirement.to_string(), requirement.id_category.to_string(),
                 requirement.requirement_description.to_string(),
             requirement.required_level.to_string()]).await
@@ -41,7 +41,7 @@ required_level, deleted) VALUES (1?, 2?, 3?, 4?, 5?)",
         let mut rows = conn
             .query(
                 "SELECT id_category_requirement, id_category, requirement_description, required_level, deleted 
-WHERE deleted = 0 AND id_category = 1?",
+WHERE deleted = 0 AND id_category = ?1",
                 params![category_id.to_string()],
             )
             .await
@@ -78,7 +78,7 @@ impl UserCategoryRepository for TursoDb {
 
         let mut rows = conn
             .query(
-                "SELECT id_category, id_user, deleted, user_level FROM category WHERE id_category = 1? AND id_user = 2? AND deleted = 0",
+                "SELECT id_category, id_user, user_level FROM user_category WHERE id_category = ?1 AND id_user = ?2 AND deleted = 0",
                 params![id_user.to_string(), id_category.to_string()],
             )
             .await
@@ -107,7 +107,7 @@ impl CategoryRepository for TursoDb {
 
         let mut rows = conn
             .query(
-                "SELECT id_category, name, min_age, max_age, deleted FROM category WHERE name = 1? AND deleted = 0",
+                "SELECT id_category, name, min_age, max_age, deleted FROM category WHERE name = ?1 AND deleted = 0",
                 params![name],
             )
             .await
@@ -131,9 +131,17 @@ impl CategoryRepository for TursoDb {
             .await
             .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
 
-        conn.execute("INSERT INTO category (id_category, name, min_age, max_age, deleted) VALUES (1?, 2?, 3?, 4?, 5?)",
-            params![category.id_category.to_string(), *category.name, category.min_age, category.max_age, category.deleted]).await
-                .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+        conn.execute(
+            "INSERT INTO category (id_category, name, min_age, max_age) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                category.id_category.to_string(),
+                *category.name,
+                category.min_age,
+                category.max_age
+            ],
+        )
+        .await
+        .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
 
         Ok(())
     }
@@ -146,7 +154,7 @@ impl CategoryRepository for TursoDb {
 
         let mut rows = conn
             .query(
-                "SELECT id_category, name, min_age, max_age, deleted FROM category WHERE id_category = 1? AND deleted = 0",
+                "SELECT id_category, name, min_age, max_age, deleted FROM category WHERE id_category = ?1 AND deleted = 0",
                 params![id.to_string()],
             )
             .await
@@ -171,9 +179,17 @@ impl CategoryRepository for TursoDb {
             .await
             .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
 
-        conn.execute("UPDATE category SET name = 2?, min_age = 3?, max_age = 4?, deleted = 5? WHERE id_category = 1?",
-            params![category.id_category.to_string(), *category.name, category.min_age, category.max_age, category.deleted]).await
-            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+        conn.execute(
+            "UPDATE category SET name = ?2, min_age = ?3, max_age = ?4 WHERE id_category = ?1",
+            params![
+                category.id_category.to_string(),
+                *category.name,
+                category.min_age,
+                category.max_age
+            ],
+        )
+        .await
+        .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
 
         Ok(())
     }
@@ -185,7 +201,7 @@ impl CategoryRepository for TursoDb {
             .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
 
         conn.execute(
-            "UPDATE category SET deleted = 1 WHERE id_category = 1?",
+            "UPDATE category SET deleted = 1 WHERE id_category = ?1",
             params![id.to_string()],
         )
         .await

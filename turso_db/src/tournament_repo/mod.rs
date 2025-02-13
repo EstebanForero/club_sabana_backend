@@ -20,7 +20,7 @@ impl TournamentRepository for TursoDb {
         conn.execute(
             "INSERT INTO tournament (
                 id_tournament, name, id_category, start_datetime, end_datetime, deleted
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            ) VALUES (?1, ?2, ?3, ?4, ?5, 0)",
             params![
                 tournament.id_tournament.to_string(),
                 tournament.name.to_string(),
@@ -33,7 +33,6 @@ impl TournamentRepository for TursoDb {
                     .end_datetime
                     .format("%Y-%m-%d %H:%M:%S")
                     .to_string(),
-                tournament.deleted as i32,
             ],
         )
         .await
@@ -44,47 +43,30 @@ impl TournamentRepository for TursoDb {
 
     async fn get_tournament_by_id(&self, id: Uuid) -> Result<Option<Tournament>> {
         let conn = self
-            .get_connection()
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+            .get_connection_with_error(Error::UnknownDatabaseError)
+            .await?;
 
-        let mut rows = conn
+        let rows = conn
             .query(
-                "SELECT id_tournament, name, id_category, start_datetime, end_datetime, deleted 
+                "SELECT id_tournament, name, id_category, start_datetime, end_datetime 
                  FROM tournament 
                  WHERE id_tournament = ?1 AND deleted = 0",
                 params![id.to_string()],
             )
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+            .await;
 
-        if let Some(row_result) = rows
-            .next()
+        self.get_value_from_row(rows, Error::UnknownDatabaseError)
             .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
-        {
-            let tournament = de::from_row::<Tournament>(&row_result)
-                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-            Ok(Some(tournament))
-        } else {
-            Ok(None)
-        }
     }
 
     async fn update_tournament(&self, tournament: &Tournament) -> Result<()> {
-        let conn = self
-            .get_connection()
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-
-        conn.execute(
+        self.execute_with_error(
             "UPDATE tournament SET 
                 name = ?1, 
                 id_category = ?2, 
                 start_datetime = ?3, 
-                end_datetime = ?4, 
-                deleted = ?5 
-             WHERE id_tournament = ?6",
+                end_datetime = ?4
+             WHERE id_tournament = ?5",
             params![
                 tournament.name.to_string(),
                 tournament.id_category.to_string(),
@@ -96,15 +78,47 @@ impl TournamentRepository for TursoDb {
                     .end_datetime
                     .format("%Y-%m-%d %H:%M:%S")
                     .to_string(),
-                tournament.deleted as i32,
                 tournament.id_tournament.to_string(),
             ],
+            Error::UnknownDatabaseError,
         )
         .await
-        .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-
-        Ok(())
     }
+
+    // async fn update_tournament(&self, tournament: &Tournament) -> Result<()> {
+    //     let conn = self
+    //         .get_connection()
+    //         .await
+    //         .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+    //
+    //     conn.execute(
+    //         "UPDATE tournament SET
+    //             name = ?1,
+    //             id_category = ?2,
+    //             start_datetime = ?3,
+    //             end_datetime = ?4,
+    //             deleted = ?5
+    //          WHERE id_tournament = ?6",
+    //         params![
+    //             tournament.name.to_string(),
+    //             tournament.id_category.to_string(),
+    //             tournament
+    //                 .start_datetime
+    //                 .format("%Y-%m-%d %H:%M:%S")
+    //                 .to_string(),
+    //             tournament
+    //                 .end_datetime
+    //                 .format("%Y-%m-%d %H:%M:%S")
+    //                 .to_string(),
+    //             tournament.deleted as i32,
+    //             tournament.id_tournament.to_string(),
+    //         ],
+    //     )
+    //     .await
+    //     .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+    //
+    //     Ok(())
+    // }
 
     async fn delete_tournament(&self, id: Uuid) -> Result<()> {
         let conn = self
@@ -130,7 +144,7 @@ impl TournamentRepository for TursoDb {
 
         let mut rows = conn
             .query(
-                "SELECT id_tournament, name, id_category, start_datetime, end_datetime, deleted 
+                "SELECT id_tournament, name, id_category, start_datetime, end_datetime 
                  FROM tournament 
                  WHERE deleted = 0",
                 params![],
@@ -166,8 +180,8 @@ impl TournamentRegistrationRepository for TursoDb {
 
         conn.execute(
             "INSERT INTO tournament_registration (
-                id_tournament, id_user, registration_datetime, deleted
-            ) VALUES (?1, ?2, ?3, ?4)",
+                id_tournament, id_user, registration_datetime
+            ) VALUES (?1, ?2, ?3)",
             params![
                 registration.id_tournament.to_string(),
                 registration.id_user.to_string(),
@@ -175,7 +189,6 @@ impl TournamentRegistrationRepository for TursoDb {
                     .registration_datetime
                     .format("%Y-%m-%d %H:%M:%S")
                     .to_string(),
-                registration.deleted as i32,
             ],
         )
         .await
@@ -188,34 +201,48 @@ impl TournamentRegistrationRepository for TursoDb {
         &self,
         tournament_id: Uuid,
     ) -> Result<Vec<TournamentRegistration>> {
-        let conn = self
-            .get_connection()
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-
-        let mut rows = conn
-            .query(
-                "SELECT id_tournament, id_user, registration_datetime, deleted 
-                 FROM tournament_registration 
-                 WHERE id_tournament = ?1 AND deleted = 0",
-                params![tournament_id.to_string()],
-            )
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-
-        let mut registrations = Vec::new();
-        while let Some(row_result) = rows
-            .next()
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
-        {
-            let registration = de::from_row::<TournamentRegistration>(&row_result)
-                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-            registrations.push(registration);
-        }
-
-        Ok(registrations)
+        self.query_many_with_error(
+            "SELECT id_tournament, id_user, registration_datetime 
+                FROM tournament_registration 
+                WHERE id_tournament = ?1 AND deleted = 0",
+            params![tournament_id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
     }
+
+    // async fn get_tournament_registrations(
+    //     &self,
+    //     tournament_id: Uuid,
+    // ) -> Result<Vec<TournamentRegistration>> {
+    //     let conn = self
+    //         .get_connection()
+    //         .await
+    //         .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+    //
+    //     let mut rows = conn
+    //         .query(
+    //             "SELECT id_tournament, id_user, registration_datetime
+    //              FROM tournament_registration
+    //              WHERE id_tournament = ?1 AND deleted = 0",
+    //             params![tournament_id.to_string()],
+    //         )
+    //         .await
+    //         .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+    //
+    //     let mut registrations = Vec::new();
+    //     while let Some(row_result) = rows
+    //         .next()
+    //         .await
+    //         .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
+    //     {
+    //         let registration = de::from_row::<TournamentRegistration>(&row_result)
+    //             .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+    //         registrations.push(registration);
+    //     }
+    //
+    //     Ok(registrations)
+    // }
 }
 
 #[async_trait]
@@ -228,8 +255,8 @@ impl TournamentAttendanceRepository for TursoDb {
 
         conn.execute(
             "INSERT INTO tournament_attendance (
-                id_tournament, id_user, attendance_datetime, position, deleted
-            ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                id_tournament, id_user, attendance_datetime, position
+            ) VALUES (?1, ?2, ?3, ?4)",
             params![
                 attendance.id_tournament.to_string(),
                 attendance.id_user.to_string(),
@@ -238,7 +265,6 @@ impl TournamentAttendanceRepository for TursoDb {
                     .format("%Y-%m-%d %H:%M:%S")
                     .to_string(),
                 attendance.position,
-                attendance.deleted as i32,
             ],
         )
         .await
@@ -258,7 +284,7 @@ impl TournamentAttendanceRepository for TursoDb {
 
         let mut rows = conn
             .query(
-                "SELECT id_tournament, id_user, attendance_datetime, position, deleted 
+                "SELECT id_tournament, id_user, attendance_datetime, position 
                  FROM tournament_attendance 
                  WHERE id_tournament = ?1 AND deleted = 0",
                 params![tournament_id.to_string()],
@@ -308,12 +334,14 @@ mod test {
     use std::future::Future;
 
     use entities::{
+        category::Category,
         tournament::{Tournament, TournamentAttendance, TournamentRegistration},
         user::{URol, User},
     };
     use libsql::params;
     use rstest::{fixture, rstest};
     use use_cases::{
+        category_service::repository_trait::{CategoryRepository, UserCategoryRepository},
         tournament_service::repository_trait::{
             TournamentAttendanceRepository, TournamentRegistrationRepository, TournamentRepository,
         },
@@ -330,6 +358,8 @@ mod test {
             .apply_doc_types()
             .await
             .apply_user_roles()
+            .await
+            .apply_levels()
             .await
             .build();
 
@@ -353,40 +383,21 @@ mod test {
         let conn = db.get_connection().await.expect("Failed to get connection");
 
         let category_id = uuid!("123e4567-e89b-12d3-a456-426614174000");
-        conn.execute(
-            "INSERT OR IGNORE INTO category (id_category, name, min_age, max_age, deleted) 
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                category_id.to_string(),
-                "Test Category".to_string(),
-                10,
-                20,
-                0
-            ],
-        )
-        .await
-        .expect("Failed to create test category");
 
-        conn.execute(
-            "INSERT OR IGNORE INTO level (level_name, deleted) 
-             VALUES (?1, ?2)",
-            params!["Beginner".to_string(), 0],
-        )
-        .await
-        .expect("Failed to create test level");
+        let category = Category {
+            name: "Test Category".into(),
+            id_category: category_id,
+            min_age: 10,
+            max_age: 20,
+        };
 
-        conn.execute(
-            "INSERT OR IGNORE INTO user_category (id_user, id_category, user_level, deleted) 
-             VALUES (?1, ?2, ?3, ?4)",
-            params![
-                user.id_user.to_string(),
-                category_id.to_string(),
-                "Beginner".to_string(),
-                0
-            ],
-        )
-        .await
-        .expect("Failed to create user-category association");
+        db.create_category(&category)
+            .await
+            .expect("Error creating category");
+
+        db.get_user_category(user.id_user, category_id)
+            .await
+            .expect("Error getting user category");
 
         let tournament_id = uuid!("25ab815d-8f40-48ff-9f75-06b2da90e2fc");
 
@@ -398,7 +409,6 @@ mod test {
             end_datetime: chrono::DateTime::from_timestamp(86400, 0)
                 .unwrap()
                 .naive_utc(),
-            deleted: false,
         };
 
         db.create_tournament(&tournament)
@@ -441,7 +451,6 @@ mod test {
             end_datetime: chrono::DateTime::from_timestamp(86400, 0)
                 .unwrap()
                 .naive_utc(),
-            deleted: false,
         };
 
         db.create_tournament(&tournament)
@@ -472,7 +481,6 @@ mod test {
             end_datetime: chrono::DateTime::from_timestamp(86400, 0)
                 .unwrap()
                 .naive_utc(),
-            deleted: false,
         };
 
         db.create_tournament(&tournament)
@@ -510,7 +518,6 @@ mod test {
             end_datetime: chrono::DateTime::from_timestamp(86400, 0)
                 .unwrap()
                 .naive_utc(),
-            deleted: false,
         };
 
         db.create_tournament(&tournament)
@@ -551,7 +558,6 @@ mod test {
             end_datetime: chrono::DateTime::from_timestamp(86400, 0)
                 .unwrap()
                 .naive_utc(),
-            deleted: false,
         };
 
         db.create_tournament(&tournament)
@@ -591,7 +597,6 @@ mod test {
             end_datetime: chrono::DateTime::from_timestamp(86400, 0)
                 .unwrap()
                 .naive_utc(),
-            deleted: false,
         };
 
         let tournament2 = Tournament {
@@ -602,7 +607,6 @@ mod test {
             end_datetime: chrono::DateTime::from_timestamp(86400, 0)
                 .unwrap()
                 .naive_utc(),
-            deleted: false,
         };
 
         db.create_tournament(&tournament1)
@@ -653,7 +657,6 @@ mod test {
             id_tournament: tournament_id,
             id_user: user_id,
             registration_datetime: chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
-            deleted: false,
         };
 
         db.register_user_for_tournament(&registration)
@@ -687,7 +690,6 @@ mod test {
             id_user: user_id,
             attendance_datetime: chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
             position: 1,
-            deleted: false,
         };
 
         db.record_tournament_attendance(&attendance)
@@ -715,7 +717,6 @@ mod test {
             id_user: user_id,
             attendance_datetime: chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
             position: 1,
-            deleted: false,
         };
 
         db.record_tournament_attendance(&attendance)

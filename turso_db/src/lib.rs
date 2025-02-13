@@ -1,6 +1,8 @@
 use std::{error::Error, sync::Arc};
 
-use libsql::{params, Connection};
+use libsql::params;
+use libsql::{de, params::IntoParams, Connection, Rows};
+use serde::Deserialize;
 
 pub mod category_repo;
 mod migration;
@@ -31,6 +33,119 @@ impl TursoDb {
         match self.conn.clone() {
             Some(conn) => Ok(conn),
             None => Ok(self.db.connect()?),
+        }
+    }
+
+    async fn get_connection_with_error<E>(
+        &self,
+        error_builder: impl Fn(String) -> E,
+    ) -> Result<libsql::Connection, E> {
+        match self.conn.clone() {
+            Some(conn) => Ok(conn),
+            None => Ok(self
+                .db
+                .connect()
+                .map_err(|err| error_builder(format!("Error in connection: {err}"))))?,
+        }
+    }
+
+    pub async fn query_one_with_error<T, E>(
+        &self,
+        sql: &str,
+        params: impl IntoParams,
+        error_builder: impl Fn(String) -> E,
+    ) -> Result<Option<T>, E>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        let conn = self.get_connection_with_error(&error_builder).await?;
+
+        let rows = conn.query(sql, params).await;
+
+        let value: Option<T> = self.get_value_from_row(rows, error_builder).await?;
+
+        Ok(value)
+    }
+
+    pub async fn query_many_with_error<T, E>(
+        &self,
+        sql: &str,
+        params: impl IntoParams,
+        error_builder: impl Fn(String) -> E,
+    ) -> Result<Vec<T>, E>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        let conn = self.get_connection_with_error(&error_builder).await?;
+
+        let rows = conn.query(sql, params).await;
+
+        let value: Vec<T> = self.get_values_from_rows(rows, error_builder).await?;
+
+        Ok(value)
+    }
+
+    pub async fn execute_with_error<E>(
+        &self,
+        sql: &str,
+        params: impl IntoParams,
+        error_builder: impl Fn(String) -> E,
+    ) -> Result<(), E> {
+        let conn = self.get_connection_with_error(&error_builder).await?;
+
+        conn.execute(sql, params)
+            .await
+            .map_err(|err| error_builder(err.to_string()))?;
+
+        Ok(())
+    }
+
+    pub async fn get_values_from_rows<T, E>(
+        &self,
+        rows: Result<Rows, libsql::Error>,
+        error_builder: impl Fn(String) -> E,
+    ) -> Result<Vec<T>, E>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        let mut rows = rows.map_err(|err| error_builder(err.to_string()))?;
+
+        let mut elements = Vec::new();
+
+        while let Some(row_result) = rows
+            .next()
+            .await
+            .map_err(|err| error_builder(err.to_string()))?
+        {
+            let element =
+                de::from_row::<T>(&row_result).map_err(|err| error_builder(err.to_string()))?;
+            elements.push(element);
+        }
+
+        Ok(elements)
+    }
+
+    pub async fn get_value_from_row<T, E>(
+        &self,
+        rows: Result<Rows, libsql::Error>,
+        error_builder: impl Fn(String) -> E,
+    ) -> Result<Option<T>, E>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        let mut rows = rows.map_err(|err| error_builder(err.to_string()))?;
+
+        if let Some(row_result) = rows
+            .next()
+            .await
+            .map_err(|err| error_builder(err.to_string()))?
+        {
+            let element =
+                de::from_row::<T>(&row_result).map_err(|err| error_builder(err.to_string()))?;
+
+            Ok(Some(element))
+        } else {
+            Ok(None)
         }
     }
 }
@@ -113,6 +228,19 @@ VALUES ('CC', false)",
             .execute(
                 "INSERT INTO user_rol (user_rol, deleted) 
 VALUES ('ADMIN', 0), ('USER', 0), ('TRAINER', 0)",
+                params![],
+            )
+            .await
+            .unwrap();
+
+        self
+    }
+
+    pub async fn apply_levels(self) -> Self {
+        self.conn
+            .execute(
+                "INSERT INTO user_rol (user_rol) 
+VALUES ('BEGGINER'), ('AMATEUR'), ('PROFESSIONAL')",
                 params![],
             )
             .await

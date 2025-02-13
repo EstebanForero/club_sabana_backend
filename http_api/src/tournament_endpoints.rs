@@ -6,15 +6,13 @@ use axum::{
     Json, Router,
 };
 use entities::tournament::{
-    Tournament, TournamentAttendanceDTO, TournamentDTO, TournamentRegistrationDTO,
+    Tournament, TournamentAttendance, TournamentCreation, TournamentRegistration,
 };
 use tracing::error;
 use use_cases::tournament_service::{err::Error, TournamentService};
 use uuid::Uuid;
 
-fn internal_error_response(message: &str) -> Response {
-    (StatusCode::INTERNAL_SERVER_ERROR, message.to_string()).into_response()
-}
+use crate::err::{HttpError, HttpResult, ToErrResponse};
 
 pub fn tournament_router(tournament_service: TournamentService) -> Router {
     Router::new()
@@ -41,45 +39,36 @@ async fn alive() -> &'static str {
 
 async fn create_tournament(
     State(tournament_service): State<TournamentService>,
-    Json(tournament_dto): Json<TournamentDTO>,
-) -> Result<(), Response> {
-    let tournament = Tournament {
-        id_tournament: Uuid::new_v4(),
-        name: tournament_dto.name,
-        id_category: tournament_dto.id_category,
-        start_datetime: tournament_dto.start_datetime,
-        end_datetime: tournament_dto.end_datetime,
-        deleted: false,
-    };
-
+    Json(tournament): Json<TournamentCreation>,
+) -> HttpResult<impl IntoResponse> {
     tournament_service
         .create_tournament(tournament)
         .await
-        .map_err(|err| internal_error_response(&message_from_err(err, "create tournament")))?;
+        .http_err("create tournament")?;
 
-    Ok(())
+    Ok((StatusCode::OK, "Tournament created successfully"))
 }
 
 async fn get_tournament(
     State(tournament_service): State<TournamentService>,
     Path(id): Path<Uuid>,
-) -> Result<Json<TournamentDTO>, Response> {
+) -> Result<Json<Tournament>, Response> {
     let tournament = tournament_service
         .get_tournament(id)
         .await
-        .map_err(|err| internal_error_response(&message_from_err(err, "get tournament")))?;
+        .http_err("get tournament")?;
 
     Ok(Json(tournament))
 }
 
 async fn update_tournament(
     State(tournament_service): State<TournamentService>,
-    Json(tournament): Json<TournamentDTO>,
+    Json(tournament): Json<Tournament>,
 ) -> Result<(), Response> {
     tournament_service
         .update_tournament(tournament)
         .await
-        .map_err(|err| internal_error_response(&message_from_err(err, "update tournament")))?;
+        .http_err("update tournament")?;
 
     Ok(())
 }
@@ -91,18 +80,18 @@ async fn delete_tournament(
     tournament_service
         .delete_tournament(id)
         .await
-        .map_err(|err| internal_error_response(&message_from_err(err, "delete tournament")))?;
+        .http_err("delete tournament")?;
 
     Ok(Json("Tournament deleted successfully".to_string()))
 }
 
 async fn list_tournaments(
     State(tournament_service): State<TournamentService>,
-) -> Result<Json<Vec<TournamentDTO>>, Response> {
+) -> Result<Json<Vec<Tournament>>, Response> {
     let tournaments = tournament_service
         .list_tournaments()
         .await
-        .map_err(|err| internal_error_response(&message_from_err(err, "list tournaments")))?;
+        .http_err("list tournaments")?;
 
     let tournaments_dto = tournaments.into_iter().collect();
     Ok(Json(tournaments_dto))
@@ -110,24 +99,24 @@ async fn list_tournaments(
 
 async fn register_user(
     State(tournament_service): State<TournamentService>,
-    Json(registration): Json<TournamentRegistrationDTO>,
+    Json(registration): Json<TournamentRegistration>,
 ) -> Result<Json<String>, Response> {
     tournament_service
         .register_user(registration)
         .await
-        .map_err(|err| internal_error_response(&message_from_err(err, "register user")))?;
+        .http_err("register user")?;
 
     Ok(Json("User registered successfully".to_string()))
 }
 
 async fn record_attendance(
     State(tournament_service): State<TournamentService>,
-    Json(attendance): Json<TournamentAttendanceDTO>,
+    Json(attendance): Json<TournamentAttendance>,
 ) -> Result<Json<String>, Response> {
     tournament_service
         .record_attendance(attendance)
         .await
-        .map_err(|err| internal_error_response(&message_from_err(err, "record attendance")))?;
+        .http_err("record attendance")?;
 
     Ok(Json("Attendance recorded successfully".to_string()))
 }
@@ -140,28 +129,30 @@ async fn update_position(
     tournament_service
         .update_position(tournament_id, user_id, position)
         .await
-        .map_err(|err| internal_error_response(&message_from_err(err, "update position")))?;
+        .http_err("update position")?;
 
     Ok(Json("Position updated successfully".to_string()))
 }
 
-fn message_from_err(err: Error, endpoint_name: &str) -> String {
-    let error_msg = match err {
-        Error::UnknownDatabaseError(error) => {
-            error!("{endpoint_name}: {error}");
-            "We are having problems in the server, try again"
-        }
-        Error::TournamentNotFound => "Tournament not found",
-        Error::UserNotRegistered => "User not registered for tournament",
-        Error::UserAlreadyRegistered => "User already registered",
-        Error::InvalidDates => "Invalid tournament dates",
-        Error::InvalidCategory => "Invalid category",
-        Error::NegativePosition => "Position must be positive",
-        Error::PositionAlreadyTaken => "Position already taken",
-        Error::UserDidNotAttend => "User did not attend tournament",
-    };
-
-    error!("error in {endpoint_name}: {error_msg}");
-
-    error_msg.to_string()
+impl<T> HttpError<T> for use_cases::tournament_service::err::Result<T> {
+    fn http_err(self, endpoint_name: &str) -> crate::err::HttpResult<T> {
+        self.map_err(|err| {
+            error!("Error in: {endpoint_name}");
+            match err {
+                Error::UnknownDatabaseError(error) => {
+                    error!("{error}");
+                    "We are having problems in the server, try again"
+                }
+                Error::TournamentNotFound => "Tournament not found",
+                Error::UserNotRegistered => "User not registered for tournament",
+                Error::UserAlreadyRegistered => "User already registered",
+                Error::InvalidDates => "Invalid tournament dates",
+                Error::InvalidCategory => "Invalid category",
+                Error::NegativePosition => "Position must be positive",
+                Error::PositionAlreadyTaken => "Position already taken",
+                Error::UserDidNotAttend => "User did not attend tournament",
+            }
+            .to_err_response()
+        })
+    }
 }

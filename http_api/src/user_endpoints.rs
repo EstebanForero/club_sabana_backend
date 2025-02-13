@@ -6,17 +6,21 @@ use axum::{
     Json, Router,
 };
 
-fn internal_error_response(message: &str) -> Response {
-    (StatusCode::INTERNAL_SERVER_ERROR, message.to_string()).into_response()
-}
+use super::err::ToErrResponse;
 
 use entities::user::{URol, UserCreation, UserInfo, UserLogInInfo};
 use serde::{Deserialize, Serialize};
 use tracing::error;
-use use_cases::user_service::{err::Error, UserService};
+use use_cases::user_service::{
+    err::{self, Error},
+    UserService,
+};
 use uuid::Uuid;
 
-use crate::auth::generate_jwt;
+use crate::{
+    auth::generate_jwt,
+    err::{HttpError, HttpResult},
+};
 
 pub fn user_router(user_service: UserService, token_key: &str) -> Router {
     Router::new()
@@ -34,7 +38,7 @@ async fn get_all_users(
     let users = user_service
         .get_all_users()
         .await
-        .map_err(|err| internal_error_response(&message_from_err(err, "get all users")))?;
+        .http_err("get all users")?;
 
     Ok(Json(users))
 }
@@ -46,7 +50,7 @@ async fn get_user_by_id(
     let user = user_service
         .get_user_by_id(user_id)
         .await
-        .map_err(|err| internal_error_response(&message_from_err(err, "get user by id")))?;
+        .http_err("get user by id")?;
 
     Ok(Json(user))
 }
@@ -72,12 +76,9 @@ async fn log_in_user(
     let log_in_response = user_service
         .log_in_user(&user_log_in_info)
         .await
-        .map_err(|err| internal_error_response(&message_from_err(err, "log in user")))?;
+        .http_err("log in user")?;
 
-    let token = generate_jwt(&log_in_response, &token_key).map_err(|err| {
-        error!("Error log in user, generating jwt: {}", err.to_string());
-        internal_error_response("Internal error generating token")
-    })?;
+    let token = generate_jwt(&log_in_response, &token_key).http_err("log in user")?;
 
     Ok(Json(LogInResponse {
         token,
@@ -85,43 +86,89 @@ async fn log_in_user(
     }))
 }
 
+//async fn log_in_user(
+//    State((user_service, token_key)): State<(UserService, String)>,
+//    Json(user_log_in_info): Json<UserLogInInfo>,
+//) -> Result<Json<LogInResponse>, Response> {
+//    let log_in_response = user_service
+//        .log_in_user(&user_log_in_info)
+//        .await
+//        .map_err(|err| internal_error_response(&message_from_err(err, "log in user")))?;
+//
+//    let token = generate_jwt(&log_in_response, &token_key).map_err(|err| {
+//        error!("Error log in user, generating jwt: {}", err.to_string());
+//        internal_error_response("Internal error generating token")
+//    })?;
+//
+//    Ok(Json(LogInResponse {
+//        token,
+//        user_rol: log_in_response.user_rol,
+//    }))
+//}
+
 async fn register_user(
     State((user_service, _)): State<(UserService, String)>,
     Json(user_creation): Json<UserCreation>,
-) -> impl IntoResponse {
-    if let Err(err) = user_service.register_user(user_creation).await {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            message_from_err(err, "register user"),
-        )
-    } else {
-        (StatusCode::OK, "User added succesfully".into())
+) -> HttpResult<impl IntoResponse> {
+    user_service
+        .register_user(user_creation)
+        .await
+        .http_err("register user")?;
+
+    Ok((StatusCode::OK, "User added succesfully"))
+}
+
+//async fn register_user(
+//    State((user_service, _)): State<(UserService, String)>,
+//    Json(user_creation): Json<UserCreation>,
+//) -> impl IntoResponse {
+//    if let Err(err) = user_service.register_user(user_creation).await {
+//        (
+//            StatusCode::INTERNAL_SERVER_ERROR,
+//            message_from_err(err, "register user"),
+//        )
+//    } else {
+//        (StatusCode::OK, "User added succesfully".into())
+//    }
+//}
+
+impl<T> HttpError<T> for Result<T, jsonwebtoken::errors::Error> {
+    fn http_err(self, endpoint: &str) -> HttpResult<T> {
+        self.map_err(|err| {
+            format!("{endpoint}: Error with json web token: {err}").to_err_response()
+        })
     }
 }
 
-fn message_from_err(err: Error, endpoint_name: &str) -> String {
-    let error_msg = match err {
-        Error::UnknownDatabaseError(error) => {
-            error!("{endpoint_name}: {error}");
-            "We are having problems in the server, try again"
-        }
-        Error::UserIdDontExist => "Unable to find user with the provided id",
-        Error::ErrorHashing(error) => {
-            error!("{endpoint_name}: {error}");
-            "We are having problems in the server, try again"
-        }
-        Error::ErrorVerificationHash(error) => {
-            error!("{endpoint_name}: {error}");
-            "We are having problems in the server, try again"
-        }
-        Error::InvalidPassword => "The password is invalid, try again",
-        Error::EmailAlreadyExists => "Email is already in use, try with other email",
-        Error::PhoneAlreadyExists => "Phone is already in use, try with other phone",
-        Error::DocumentAlreadyExists => "Document is already in use, try with other document",
-        Error::InvalidIdentifier => "There is not an user registered with the provided identifier",
-    };
-
-    error!("error in {endpoint_name}: {error_msg}");
-
-    error_msg.to_string()
+impl<T> HttpError<T> for err::Result<T> {
+    fn http_err(self, endpoint_name: &str) -> crate::err::HttpResult<T> {
+        self.map_err(|err| {
+            error!("Error in: {endpoint_name}");
+            match err {
+                Error::UnknownDatabaseError(error) => {
+                    error!("{error}");
+                    "We are having problems in the server, try again"
+                }
+                Error::UserIdDontExist => "Unable to find user with the provided id",
+                Error::ErrorHashing(error) => {
+                    error!("{error}");
+                    "We are having problems in the server, try again"
+                }
+                Error::ErrorVerificationHash(error) => {
+                    error!("{error}");
+                    "We are having problems in the server, try again"
+                }
+                Error::InvalidPassword => "The password is invalid, try again",
+                Error::EmailAlreadyExists => "Email is already in use, try with other email",
+                Error::PhoneAlreadyExists => "Phone is already in use, try with other phone",
+                Error::DocumentAlreadyExists => {
+                    "Document is already in use, try with other document"
+                }
+                Error::InvalidIdentifier => {
+                    "There is not an user registered with the provided identifier"
+                }
+            }
+            .to_err_response()
+        })
+    }
 }

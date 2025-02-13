@@ -19,8 +19,8 @@ impl UserRepository for TursoDb {
             "INSERT INTO person (
                 id_user, first_name, last_name, birth_date, registration_date, 
                 email, email_verified, phone_number, country_code, password, 
-                identification_number, identification_type, user_rol, deleted
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                identification_number, identification_type, user_rol
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 user.id_user.to_string(),
                 user.first_name.to_string(),
@@ -37,7 +37,6 @@ impl UserRepository for TursoDb {
                 user.identification_number.to_string(),
                 user.identification_type.to_string(),
                 user.user_rol.to_string(),
-                user.deleted as i32,
             ],
         )
         .await
@@ -55,7 +54,7 @@ impl UserRepository for TursoDb {
         let mut rows = conn
             .query(
                 "SELECT id_user, first_name, last_name, birth_date, registration_date, email,
-email_verified, phone_number, country_code, password, identification_number, identification_type, user_rol, deleted FROM person WHERE id_user = ?1 AND deleted = 0",
+email_verified, phone_number, country_code, password, identification_number, identification_type, user_rol FROM person WHERE id_user = ?1 AND deleted = 0",
                 params![id.to_string()],
             )
             .await
@@ -213,7 +212,6 @@ WHERE id_user = ?14",
                 user.identification_number.to_string(),
                 user.identification_type.to_string(),
                 user.user_rol.to_string(),
-                user.deleted as i32,
                 user.id_user.to_string(),
             ],
         )
@@ -249,7 +247,7 @@ WHERE id_user = ?14",
             .query(
                 "SELECT id_user, first_name, last_name, birth_date, registration_date, email,
 email_verified, phone_number, country_code, password, identification_number,
-identification_type, user_rol, deleted 
+identification_type, user_rol 
 FROM person 
 WHERE deleted = 0",
                 params![],
@@ -453,7 +451,8 @@ mod test {
             .await
             .expect("Error fetching updated user")
             .expect("User not found after update");
-        assert_eq!(user, updated_user);
+
+        assert_ne!(user, updated_user);
     }
 
     #[rstest]

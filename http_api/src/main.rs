@@ -15,6 +15,7 @@ use use_cases::{
 
 mod auth;
 mod category_endpoints;
+mod err;
 mod tournament_endpoints;
 mod user_endpoints;
 
