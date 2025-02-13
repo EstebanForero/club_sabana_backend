@@ -12,35 +12,7 @@ use crate::TursoDb;
 #[async_trait]
 impl TrainingRepository for TursoDb {
     async fn create_training(&self, training: &Training) -> Result<()> {
-        let conn = self
-            .get_connection()
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
-
-        conn.execute(
-            "INSERT INTO 
-training (id_training, name, start_datetime, end_datetime, minimum_payment, deleted, id_category) 
-VALUES (id_training = 1?, name = 2?, start_datetime = 3?, end_datetime = 4?, minimum_payment = 5?, deleted = 6?, id_category = 7?)",
-            params![
-                training.id_training.to_string(),
-                *training.name,
-                training
-                    .start_datetime
-                    .format("%Y-%m-%d %H:%M:%S")
-                    .to_string(),
-                training
-                    .end_datetime
-                    .format("%Y-%m-%d %H:%M:%S")
-                    .to_string(),
-                training.minimum_payment,
-                training.deleted,
-                training.id_category.to_string()
-            ],
-        )
-        .await
-        .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
-
-        Ok(())
+        self.
     }
 
     async fn get_training_by_id(&self, id: Uuid) -> Result<Option<Training>> {
