@@ -13,7 +13,6 @@ pub struct Training {
     #[serde(with = "datetime_serde")]
     pub end_datetime: NaiveDateTime,
     pub minimum_payment: f64,
-    pub deleted: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -25,5 +24,4 @@ pub struct TrainingRegistration {
     pub attended: bool,
     #[serde(with = "datetime_serde")]
     pub attendance_datetime: NaiveDateTime,
-    pub deleted: bool,
 }

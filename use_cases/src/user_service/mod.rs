@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use entities::user::{URol, UserCreation, UserCreationExtra, UserInfo, UserLogInInfo};
+use chrono::Utc;
+use entities::user::{URol, UserCreation, UserInfo, UserLogInInfo};
 use hasher_trait::PasswordHasher;
 use repository_trait::UserRepository;
 
@@ -42,12 +43,8 @@ impl UserService {
         let identification_number = user_creation.identification_number.clone();
         let identification_type = user_creation.identification_type.clone();
 
-        let mut user = user_creation.build_user(UserCreationExtra {
-            id_user: Uuid::new_v4(),
-            email_verified: false,
-            user_rol: URol::USER,
-            deleted: false,
-        });
+        let mut user =
+            user_creation.to_user(Uuid::new_v4(), Utc::now().naive_utc(), false, URol::USER);
 
         if self.user_repo.get_user_id_by_email(&email).await?.is_some() {
             return Err(Error::EmailAlreadyExists);

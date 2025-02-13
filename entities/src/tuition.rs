@@ -10,5 +10,4 @@ pub struct Tuition {
     pub amount: f64,
     #[serde(with = "datetime_serde")]
     pub payment_date: NaiveDateTime,
-    pub deleted: bool,
 }

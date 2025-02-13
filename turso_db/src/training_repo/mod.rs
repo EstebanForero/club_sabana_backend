@@ -19,8 +19,8 @@ impl TrainingRepository for TursoDb {
 
         conn.execute(
             "INSERT INTO 
-training (id_training, name, start_datetime, end_datetime, minimum_payment, deleted, id_category) 
-VALUES (id_training = 1?, name = 2?, start_datetime = 3?, end_datetime = 4?, minimum_payment = 5?, deleted = 6?, id_category = 7?)",
+training (id_training, name, start_datetime, end_datetime, minimum_payment, id_category) 
+VALUES (id_training = 1?, name = 2?, start_datetime = 3?, end_datetime = 4?, minimum_payment = 5? = 6?, id_category = 7?)",
             params![
                 training.id_training.to_string(),
                 *training.name,
@@ -33,7 +33,6 @@ VALUES (id_training = 1?, name = 2?, start_datetime = 3?, end_datetime = 4?, min
                     .format("%Y-%m-%d %H:%M:%S")
                     .to_string(),
                 training.minimum_payment,
-                training.deleted,
                 training.id_category.to_string()
             ],
         )
@@ -49,7 +48,7 @@ VALUES (id_training = 1?, name = 2?, start_datetime = 3?, end_datetime = 4?, min
             .await
             .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
 
-        let mut rows = conn.query("SELECT id_training, name, start_datetime, end_datetime, minimum_payment, deleted, id_category
+        let mut rows = conn.query("SELECT id_training, name, start_datetime, end_datetime, minimum_payment, id_category
 FROM training WHERE id_training = 1?", params![id.to_string()]).await.map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
 
         if let Some(res_rows) = rows
@@ -73,7 +72,7 @@ FROM training WHERE id_training = 1?", params![id.to_string()]).await.map_err(|e
 
         conn.execute(
             "UPDATE training SET name = 2?, start_datetime = 3?, end_datetime = 4?,
-minimum_payment = 5?, deleted = 6?, id_category = 7? WHERE id_training = 1?",
+minimum_payment = 5? = 6?, id_category = 7? WHERE id_training = 1?",
             params![
                 training.id_training.to_string(),
                 *training.name,
@@ -86,7 +85,6 @@ minimum_payment = 5?, deleted = 6?, id_category = 7? WHERE id_training = 1?",
                     .format("%Y-%m-%d %H:%M:%S")
                     .to_string(),
                 training.minimum_payment,
-                training.deleted,
                 training.id_category.to_string()
             ],
         )
@@ -118,7 +116,7 @@ minimum_payment = 5?, deleted = 6?, id_category = 7? WHERE id_training = 1?",
             .await
             .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
 
-        let mut rows = conn.query("SELECT id_training, name, start_datetime, end_datetime, minimum_payment, deleted, id_category FROM
+        let mut rows = conn.query("SELECT id_training, name, start_datetime, end_datetime, minimum_payment, id_category FROM
 training", params![]).await.map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
 
         let mut res: Vec<Training> = Vec::new();
@@ -146,8 +144,8 @@ impl TrainingRegistrationRepository for TursoDb {
             .await
             .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
 
-        conn.execute("INSERT INTO training_registration (id_user, registration_datetime, attended, attendance_time, id_training, deleted)
-VALUES (id_user = 1?, registration_datetime = 2?, attended = 3?, attendance_time = 4?, id_training = 5?, deleted = 6?)", params![
+        conn.execute("INSERT INTO training_registration (id_user, registration_datetime, attended, attendance_time, id_training)
+VALUES (id_user = 1?, registration_datetime = 2?, attended = 3?, attendance_time = 4?, id_training = 5? = 6?)", params![
     registration.id_user.to_string(),
     registration.registration_datetime
                     .format("%Y-%m-%d %H:%M:%S")
@@ -157,7 +155,6 @@ VALUES (id_user = 1?, registration_datetime = 2?, attended = 3?, attendance_time
                     .format("%Y-%m-%d %H:%M:%S")
                     .to_string(),
     registration.id_training.to_string(),
-    registration.deleted
 ]).await.map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
 
         Ok(())
@@ -172,13 +169,14 @@ VALUES (id_user = 1?, registration_datetime = 2?, attended = 3?, attendance_time
             .await
             .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
 
-        let mut rows = conn.query(
-            "SELECT id_user, registration_datetime, attended, attendance_time, id_training, deleted
+        let mut rows = conn
+            .query(
+                "SELECT id_user, registration_datetime, attended, attendance_time, id_training
 FROM training_registration WHERE id_training = 1?",
-            params![training_id.to_string()],
-        )
-        .await
-        .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+                params![training_id.to_string()],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
 
         let mut res: Vec<TrainingRegistration> = Vec::new();
 

@@ -3,8 +3,7 @@ pub mod repository_trait;
 
 use self::err::{Error, Result};
 use entities::tournament::{
-    Tournament, TournamentAttendance, TournamentAttendanceDTO, TournamentDTO,
-    TournamentRegistration, TournamentRegistrationDTO,
+    Tournament, TournamentAttendance, TournamentCreation, TournamentRegistration,
 };
 use repository_trait::{
     TournamentAttendanceRepository, TournamentRegistrationRepository, TournamentRepository,
@@ -32,17 +31,19 @@ impl TournamentService {
         }
     }
 
-    pub async fn create_tournament(&self, tournament: Tournament) -> Result<()> {
+    pub async fn create_tournament(&self, tournament: TournamentCreation) -> Result<()> {
         if tournament.start_datetime >= tournament.end_datetime {
             return Err(Error::InvalidDates);
         }
 
-        self.tournament_repo.create_tournament(&tournament).await?;
+        self.tournament_repo
+            .create_tournament(&tournament.to_tournament(Uuid::new_v4()))
+            .await?;
 
         Ok(())
     }
 
-    pub async fn get_tournament(&self, id: Uuid) -> Result<TournamentDTO> {
+    pub async fn get_tournament(&self, id: Uuid) -> Result<Tournament> {
         self.tournament_repo
             .get_tournament_by_id(id)
             .await?
@@ -50,7 +51,7 @@ impl TournamentService {
             .map(|t| t.into())
     }
 
-    pub async fn update_tournament(&self, tournament: TournamentDTO) -> Result<()> {
+    pub async fn update_tournament(&self, tournament: Tournament) -> Result<()> {
         // Validate dates
         if tournament.start_datetime >= tournament.end_datetime {
             return Err(Error::InvalidDates);
@@ -73,7 +74,6 @@ impl TournamentService {
                 id_category: tournament.id_category,
                 start_datetime: tournament.start_datetime,
                 end_datetime: tournament.end_datetime,
-                deleted: false,
             })
             .await?;
 
@@ -96,13 +96,13 @@ impl TournamentService {
         Ok(())
     }
 
-    pub async fn list_tournaments(&self) -> Result<Vec<TournamentDTO>> {
+    pub async fn list_tournaments(&self) -> Result<Vec<Tournament>> {
         let tournaments = self.tournament_repo.list_tournaments().await?;
 
         Ok(tournaments.into_iter().map(|t| t.into()).collect())
     }
 
-    pub async fn register_user(&self, registration: TournamentRegistrationDTO) -> Result<()> {
+    pub async fn register_user(&self, registration: TournamentRegistration) -> Result<()> {
         // Check if tournament exists
         if self
             .tournament_repo
@@ -130,14 +130,13 @@ impl TournamentService {
                 id_tournament: registration.id_tournament,
                 id_user: registration.id_user,
                 registration_datetime: registration.registration_datetime,
-                deleted: false,
             })
             .await?;
 
         Ok(())
     }
 
-    pub async fn record_attendance(&self, attendance: TournamentAttendanceDTO) -> Result<()> {
+    pub async fn record_attendance(&self, attendance: TournamentAttendance) -> Result<()> {
         // Check if tournament exists
         if self
             .tournament_repo
@@ -166,7 +165,6 @@ impl TournamentService {
                 id_user: attendance.id_user,
                 attendance_datetime: attendance.attendance_datetime,
                 position: attendance.position,
-                deleted: false,
             })
             .await?;
 

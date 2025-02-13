@@ -236,6 +236,19 @@ VALUES ('ADMIN', 0), ('USER', 0), ('TRAINER', 0)",
         self
     }
 
+    pub async fn apply_levels(self) -> Self {
+        self.conn
+            .execute(
+                "INSERT INTO user_rol (user_rol) 
+VALUES ('BEGGINER'), ('AMATEUR'), ('PROFESSIONAL')",
+                params![],
+            )
+            .await
+            .unwrap();
+
+        self
+    }
+
     pub fn build(self) -> TursoDb {
         TursoDb {
             db: self.db,

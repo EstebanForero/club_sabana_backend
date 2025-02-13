@@ -6,7 +6,7 @@ use axum::{
     Json, Router,
 };
 use entities::tournament::{
-    Tournament, TournamentAttendanceDTO, TournamentDTO, TournamentRegistrationDTO,
+    Tournament, TournamentAttendance, TournamentCreation, TournamentRegistration,
 };
 use tracing::error;
 use use_cases::tournament_service::{err::Error, TournamentService};
@@ -39,17 +39,8 @@ async fn alive() -> &'static str {
 
 async fn create_tournament(
     State(tournament_service): State<TournamentService>,
-    Json(tournament_dto): Json<TournamentDTO>,
+    Json(tournament): Json<TournamentCreation>,
 ) -> HttpResult<impl IntoResponse> {
-    let tournament = Tournament {
-        id_tournament: Uuid::new_v4(),
-        name: tournament_dto.name,
-        id_category: tournament_dto.id_category,
-        start_datetime: tournament_dto.start_datetime,
-        end_datetime: tournament_dto.end_datetime,
-        deleted: false,
-    };
-
     tournament_service
         .create_tournament(tournament)
         .await
@@ -61,7 +52,7 @@ async fn create_tournament(
 async fn get_tournament(
     State(tournament_service): State<TournamentService>,
     Path(id): Path<Uuid>,
-) -> Result<Json<TournamentDTO>, Response> {
+) -> Result<Json<Tournament>, Response> {
     let tournament = tournament_service
         .get_tournament(id)
         .await
@@ -72,7 +63,7 @@ async fn get_tournament(
 
 async fn update_tournament(
     State(tournament_service): State<TournamentService>,
-    Json(tournament): Json<TournamentDTO>,
+    Json(tournament): Json<Tournament>,
 ) -> Result<(), Response> {
     tournament_service
         .update_tournament(tournament)
@@ -96,7 +87,7 @@ async fn delete_tournament(
 
 async fn list_tournaments(
     State(tournament_service): State<TournamentService>,
-) -> Result<Json<Vec<TournamentDTO>>, Response> {
+) -> Result<Json<Vec<Tournament>>, Response> {
     let tournaments = tournament_service
         .list_tournaments()
         .await
@@ -108,7 +99,7 @@ async fn list_tournaments(
 
 async fn register_user(
     State(tournament_service): State<TournamentService>,
-    Json(registration): Json<TournamentRegistrationDTO>,
+    Json(registration): Json<TournamentRegistration>,
 ) -> Result<Json<String>, Response> {
     tournament_service
         .register_user(registration)
@@ -120,7 +111,7 @@ async fn register_user(
 
 async fn record_attendance(
     State(tournament_service): State<TournamentService>,
-    Json(attendance): Json<TournamentAttendanceDTO>,
+    Json(attendance): Json<TournamentAttendance>,
 ) -> Result<Json<String>, Response> {
     tournament_service
         .record_attendance(attendance)
