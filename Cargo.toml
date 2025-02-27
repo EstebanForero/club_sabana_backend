@@ -1,3 +1,5 @@
 [workspace]
 members = [ "bcrypt_hasher", "entities","http_api", "turso_db", "use_cases"]
 resolver = "2"
+
+
