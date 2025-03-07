@@ -1,26 +1,18 @@
 pub fn get_migration() -> String {
     r#"
-PRAGMA foreign_keys = ON;
-
-----------------------------------------------------------------
 -- 1) user_rol
-----------------------------------------------------------------
 CREATE TABLE user_rol (
     user_rol       TEXT PRIMARY KEY,
     deleted        INTEGER NOT NULL DEFAULT 0  -- 0 = false, 1 = true
 );
 
-----------------------------------------------------------------
 -- 2) identification_type
-----------------------------------------------------------------
 CREATE TABLE identification_type (
     identification_type  TEXT PRIMARY KEY,
     deleted             INTEGER NOT NULL DEFAULT 0
 );
 
-----------------------------------------------------------------
 -- 3) category
-----------------------------------------------------------------
 CREATE TABLE category (
     id_category   TEXT PRIMARY KEY,
     name          TEXT NOT NULL,
@@ -29,17 +21,13 @@ CREATE TABLE category (
     deleted       INTEGER NOT NULL DEFAULT 0
 );
 
-----------------------------------------------------------------
 -- 4) level
-----------------------------------------------------------------
 CREATE TABLE level (
     level_name    TEXT PRIMARY KEY,
     deleted       INTEGER NOT NULL DEFAULT 0
 );
 
-----------------------------------------------------------------
--- 5) person (quoted because 'user' can be a reserved keyword)
-----------------------------------------------------------------
+-- 5) person
 CREATE TABLE person (
     id_user                TEXT PRIMARY KEY,
     first_name             TEXT NOT NULL,
@@ -59,9 +47,7 @@ CREATE TABLE person (
     FOREIGN KEY (user_rol) REFERENCES user_rol(user_rol)
 );
 
-----------------------------------------------------------------
 -- 6) category_requirement
-----------------------------------------------------------------
 CREATE TABLE category_requirement (
     id_category_requirement   TEXT PRIMARY KEY,
     id_category               TEXT NOT NULL,
@@ -72,9 +58,7 @@ CREATE TABLE category_requirement (
     FOREIGN KEY (required_level) REFERENCES level(level_name)
 );
 
-----------------------------------------------------------------
 -- 7) user_category
-----------------------------------------------------------------
 CREATE TABLE user_category (
     id_user      TEXT NOT NULL,
     id_category  TEXT NOT NULL,
@@ -86,9 +70,7 @@ CREATE TABLE user_category (
     FOREIGN KEY (user_level)  REFERENCES level(level_name)
 );
 
-----------------------------------------------------------------
 -- 8) tournament
-----------------------------------------------------------------
 CREATE TABLE tournament (
     id_tournament  TEXT PRIMARY KEY,
     name           TEXT NOT NULL,
@@ -99,9 +81,7 @@ CREATE TABLE tournament (
     FOREIGN KEY (id_category) REFERENCES category(id_category)
 );
 
-----------------------------------------------------------------
 -- 9) tournament_registration
-----------------------------------------------------------------
 CREATE TABLE tournament_registration (
     id_tournament        TEXT NOT NULL,
     id_user              TEXT NOT NULL,
@@ -112,9 +92,7 @@ CREATE TABLE tournament_registration (
     FOREIGN KEY (id_user)       REFERENCES person(id_user)
 );
 
-----------------------------------------------------------------
 -- 10) tournament_attendance
-----------------------------------------------------------------
 CREATE TABLE tournament_attendance (
     id_tournament       TEXT NOT NULL,
     id_user             TEXT NOT NULL,
@@ -126,38 +104,32 @@ CREATE TABLE tournament_attendance (
     FOREIGN KEY (id_user)       REFERENCES person(id_user)
 );
 
-----------------------------------------------------------------
 -- 11) training
-----------------------------------------------------------------
 CREATE TABLE training (
     id_training    TEXT PRIMARY KEY,
     name           TEXT NOT NULL,
     id_category    TEXT NOT NULL,
-    start_datetime TEXT NOT NULL,
-    end_datetime   TEXT NOT NULL,
+    start_datetime TEXT NOT NULL,     -- Example: 'YYYY-MM-DD HH:MM:SS'
+    end_datetime   TEXT NOT NULL,     -- Example: 'YYYY-MM-DD HH:MM:SS'
     minimum_payment REAL,
     deleted        INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (id_category) REFERENCES category(id_category)
 );
 
-----------------------------------------------------------------
--- 12) training_registration
-----------------------------------------------------------------
+-- 12) training_registration (updated: attendance_datetime is now nullable)
 CREATE TABLE training_registration (
     id_training          TEXT NOT NULL,
     id_user              TEXT NOT NULL,
     registration_datetime TEXT NOT NULL,   -- Example: 'YYYY-MM-DD HH:MM:SS'
-    attended            INTEGER NOT NULL DEFAULT 0,  -- 0 = false, 1 = true
-    attendance_datetime TEXT NOT NULL,    -- Example: 'YYYY-MM-DD HH:MM:SS'
-    deleted             INTEGER NOT NULL DEFAULT 0,
+    attended             INTEGER NOT NULL DEFAULT 0,  -- 0 = false, 1 = true
+    attendance_datetime  TEXT,              -- Changed to nullable
+    deleted              INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (id_training, id_user),
     FOREIGN KEY (id_training) REFERENCES training(id_training),
     FOREIGN KEY (id_user)     REFERENCES person(id_user)
 );
 
-----------------------------------------------------------------
 -- 13) tuition
-----------------------------------------------------------------
 CREATE TABLE tuition (
     id_tuition   TEXT PRIMARY KEY,
     id_user      TEXT NOT NULL,
@@ -165,6 +137,19 @@ CREATE TABLE tuition (
     payment_date TEXT NOT NULL,  -- Example: 'YYYY-MM-DD HH:MM:SS'
     deleted      INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (id_user) REFERENCES person(id_user)
+);
+
+-- 14) request_for_approval (new table)
+CREATE TABLE request_for_approval (
+    request_id         TEXT PRIMARY KEY,
+    requester_id       TEXT NOT NULL,
+    requested_command  TEXT NOT NULL,
+    justification      TEXT NOT NULL,
+    approved           INTEGER NOT NULL,  -- Bool stored as INTEGER (0 = false, 1 = true)
+    approver_id        TEXT,             -- Nullable, as approval may be pending
+    deleted            INTEGER NOT NULL DEFAULT 0,  -- Added for consistency
+    FOREIGN KEY (requester_id) REFERENCES person(id_user),
+    FOREIGN KEY (approver_id)  REFERENCES person(id_user)
 );
 "#
     .to_string()

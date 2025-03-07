@@ -6,6 +6,7 @@ use serde::Deserialize;
 
 pub mod category_repo;
 mod migration;
+pub mod request_repo;
 pub mod tournament_repo;
 pub mod training_repo;
 pub mod tuition_repo;
