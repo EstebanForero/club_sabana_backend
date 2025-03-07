@@ -48,16 +48,13 @@ impl TournamentService {
             .get_tournament_by_id(id)
             .await?
             .ok_or(Error::TournamentNotFound)
-            .map(|t| t.into())
     }
 
     pub async fn update_tournament(&self, tournament: Tournament) -> Result<()> {
-        // Validate dates
         if tournament.start_datetime >= tournament.end_datetime {
             return Err(Error::InvalidDates);
         }
 
-        // Check if tournament exists
         if self
             .tournament_repo
             .get_tournament_by_id(tournament.id_tournament)
@@ -81,7 +78,6 @@ impl TournamentService {
     }
 
     pub async fn delete_tournament(&self, id: Uuid) -> Result<()> {
-        // Check if tournament exists
         if self
             .tournament_repo
             .get_tournament_by_id(id)
@@ -99,11 +95,10 @@ impl TournamentService {
     pub async fn list_tournaments(&self) -> Result<Vec<Tournament>> {
         let tournaments = self.tournament_repo.list_tournaments().await?;
 
-        Ok(tournaments.into_iter().map(|t| t.into()).collect())
+        Ok(tournaments)
     }
 
     pub async fn register_user(&self, registration: TournamentRegistration) -> Result<()> {
-        // Check if tournament exists
         if self
             .tournament_repo
             .get_tournament_by_id(registration.id_tournament)
@@ -113,7 +108,6 @@ impl TournamentService {
             return Err(Error::TournamentNotFound);
         }
 
-        // Check if user is already registered
         let registrations = self
             .registration_repo
             .get_tournament_registrations(registration.id_tournament)
@@ -137,7 +131,6 @@ impl TournamentService {
     }
 
     pub async fn record_attendance(&self, attendance: TournamentAttendance) -> Result<()> {
-        // Check if tournament exists
         if self
             .tournament_repo
             .get_tournament_by_id(attendance.id_tournament)
@@ -147,7 +140,6 @@ impl TournamentService {
             return Err(Error::TournamentNotFound);
         }
 
-        // Check if user is registered
         let registrations = self
             .registration_repo
             .get_tournament_registrations(attendance.id_tournament)
@@ -177,7 +169,6 @@ impl TournamentService {
         user_id: Uuid,
         position: i32,
     ) -> Result<()> {
-        // Check if tournament exists
         if self
             .tournament_repo
             .get_tournament_by_id(tournament_id)
@@ -187,7 +178,6 @@ impl TournamentService {
             return Err(Error::TournamentNotFound);
         }
 
-        // Check if user attended
         let attendance = self
             .attendance_repo
             .get_tournament_attendance(tournament_id)
@@ -200,7 +190,6 @@ impl TournamentService {
             return Err(Error::PositionAlreadyTaken);
         }
 
-        // Validate position
         if position < 1 {
             return Err(Error::NegativePosition);
         }

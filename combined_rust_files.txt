@@ -1,0 +1,3969 @@
+--- bcrypt_hasher/src/lib.rs ---
+use bcrypt::{hash, verify, DEFAULT_COST};
+use use_cases::user_service::err::Error::*;
+use use_cases::user_service::hasher_trait::PasswordHasher;
+
+pub struct BcryptHasher;
+
+impl PasswordHasher for BcryptHasher {
+    fn hash(&self, content: &str) -> use_cases::user_service::err::Result<String> {
+        let hash_str = hash(content, DEFAULT_COST).map_err(|err| ErrorHashing(format!("{err}")))?;
+
+        Ok(hash_str)
+    }
+
+    fn verify(&self, original: &str, hashed: &str) -> use_cases::user_service::err::Result<bool> {
+        let is_valid = verify(original, hashed).map_err(|err| ErrorHashing(format!("{err}")))?;
+
+        Ok(is_valid)
+    }
+}
+--- entities/src/category.rs ---
+use enum2str::EnumStr;
+use partial_struct::Partial;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+#[derive(Debug, Serialize, Deserialize, Partial)]
+#[partial(
+    "CategoryCreation",
+    derive(Debug, Serialize, Deserialize, Partial),
+    omit(id_category)
+)]
+pub struct Category {
+    pub id_category: Uuid,
+    pub name: String,
+    pub min_age: i32,
+    pub max_age: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Level {
+    pub level_name: LevelName,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CategoryRequirement {
+    pub id_category_requirement: Uuid,
+    pub id_category: Uuid,
+    pub requirement_description: String,
+    pub required_level: LevelName,
+}
+
+#[derive(Debug, Serialize, Deserialize, EnumStr)]
+pub enum LevelName {
+    BEGGINER,
+    AMATEUR,
+    PROFESSIONAL,
+}
+--- entities/src/date_serde.rs ---
+use chrono::NaiveDate;
+use serde::{de, Deserialize, Deserializer, Serializer};
+
+pub fn serialize<S>(date: &NaiveDate, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&date.format("%Y-%m-%d").to_string())
+}
+
+pub fn deserialize<'de, D>(deserializer: D) -> Result<NaiveDate, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    NaiveDate::parse_from_str(&s, "%Y-%m-%d").map_err(de::Error::custom)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+    use serde::{Deserialize, Serialize};
+    use serde_json;
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    struct TestDate {
+        #[serde(with = "super")]
+        date: NaiveDate,
+    }
+
+    #[test]
+    fn test_serialize() {
+        let date = NaiveDate::from_ymd_opt(2023, 10, 15).unwrap();
+        let test_date = TestDate { date };
+
+        let serialized = serde_json::to_string(&test_date).unwrap();
+        assert_eq!(serialized, r#"{"date":"2023-10-15"}"#);
+    }
+
+    #[test]
+    fn test_deserialize() {
+        let json_data = r#"{"date":"2023-10-15"}"#;
+        let deserialized: TestDate = serde_json::from_str(json_data).unwrap();
+
+        let expected_date = NaiveDate::from_ymd_opt(2023, 10, 15).unwrap();
+        assert_eq!(deserialized.date, expected_date);
+    }
+
+    #[test]
+    fn test_deserialize_invalid_format() {
+        let json_data = r#"{"date":"15-10-2023"}"#;
+        let result: Result<TestDate, _> = serde_json::from_str(json_data);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_invalid_date() {
+        let json_data = r#"{"date":"2023-02-30"}"#; // February 30th doesn't exist
+        let result: Result<TestDate, _> = serde_json::from_str(json_data);
+
+        assert!(result.is_err());
+    }
+}
+--- entities/src/datetime_serde.rs ---
+use chrono::NaiveDateTime;
+use serde::{de, Deserialize, Deserializer, Serializer};
+
+pub fn serialize<S>(datetime: &NaiveDateTime, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&datetime.format("%Y-%m-%d %H:%M:%S").to_string())
+}
+
+/// Deserializes a string "YYYY-MM-DD HH:MM:SS" into a NaiveDateTime
+pub fn deserialize<'de, D>(deserializer: D) -> Result<NaiveDateTime, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S").map_err(de::Error::custom)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{DateTime, NaiveDateTime};
+    use serde::{Deserialize, Serialize};
+    use serde_json;
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    struct TestDateTime {
+        #[serde(with = "super")]
+        datetime: NaiveDateTime,
+    }
+
+    #[test]
+    fn test_serialize() {
+        let datetime = DateTime::from_timestamp(1672531199, 0).unwrap().naive_utc(); // 2023-01-01 23:59:59
+        let test_datetime = TestDateTime { datetime };
+
+        let serialized = serde_json::to_string(&test_datetime).unwrap();
+        assert_eq!(serialized, r#"{"datetime":"2022-12-31 23:59:59"}"#);
+    }
+
+    #[test]
+    fn test_deserialize() {
+        let json_data = r#"{"datetime":"2022-12-31 23:59:59"}"#;
+        let deserialized: TestDateTime = serde_json::from_str(json_data).unwrap();
+
+        let expected_datetime = DateTime::from_timestamp(1672531199, 0).unwrap().naive_utc();
+        assert_eq!(deserialized.datetime, expected_datetime);
+    }
+
+    #[test]
+    fn test_deserialize_invalid_format() {
+        let json_data = r#"{"datetime":"01-01-2022 23:59:59"}"#; // Wrong date format
+        let result: Result<TestDateTime, _> = serde_json::from_str(json_data);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_invalid_datetime() {
+        let json_data = r#"{"datetime":"2022-02-30 25:61:61"}"#; // Invalid date and time
+        let result: Result<TestDateTime, _> = serde_json::from_str(json_data);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_round_trip() {
+        let original_datetime = DateTime::from_timestamp(1672531199, 0).unwrap().naive_utc();
+        let test_datetime = TestDateTime {
+            datetime: original_datetime,
+        };
+
+        // Serialize
+        let serialized = serde_json::to_string(&test_datetime).unwrap();
+
+        // Deserialize
+        let deserialized: TestDateTime = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(test_datetime, deserialized);
+    }
+}
+--- entities/src/lib.rs ---
+pub mod category;
+pub mod date_serde;
+pub mod datetime_serde;
+pub mod tournament;
+pub mod training;
+pub mod tuition;
+pub mod user;
+--- entities/src/tournament.rs ---
+use super::datetime_serde;
+use chrono::NaiveDateTime;
+use partial_struct::Partial;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Partial)]
+#[partial(
+    "TournamentCreation",
+    derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Partial),
+    omit(id_tournament)
+)]
+pub struct Tournament {
+    pub id_tournament: Uuid,
+    pub name: String,
+    pub id_category: Uuid,
+    #[serde(with = "datetime_serde")]
+    pub start_datetime: NaiveDateTime,
+    #[serde(with = "datetime_serde")]
+    pub end_datetime: NaiveDateTime,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct TournamentRegistration {
+    pub id_tournament: Uuid,
+    pub id_user: Uuid,
+    #[serde(with = "datetime_serde")]
+    pub registration_datetime: NaiveDateTime,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct TournamentAttendance {
+    pub id_tournament: Uuid,
+    pub id_user: Uuid,
+    #[serde(with = "datetime_serde")]
+    pub attendance_datetime: NaiveDateTime,
+    pub position: i32,
+}
+--- entities/src/training.rs ---
+use super::datetime_serde;
+use chrono::NaiveDateTime;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Training {
+    pub id_training: Uuid,
+    pub name: String,
+    pub id_category: Uuid,
+    #[serde(with = "datetime_serde")]
+    pub start_datetime: NaiveDateTime,
+    #[serde(with = "datetime_serde")]
+    pub end_datetime: NaiveDateTime,
+    pub minimum_payment: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TrainingRegistration {
+    pub id_training: Uuid,
+    pub id_user: Uuid,
+    #[serde(with = "datetime_serde")]
+    pub registration_datetime: NaiveDateTime,
+    pub attended: bool,
+    #[serde(with = "datetime_serde")]
+    pub attendance_datetime: NaiveDateTime,
+}
+--- entities/src/tuition.rs ---
+use super::datetime_serde;
+use chrono::NaiveDateTime;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Tuition {
+    pub id_tuition: Uuid,
+    pub id_user: Uuid,
+    pub amount: f64,
+    #[serde(with = "datetime_serde")]
+    pub payment_date: NaiveDateTime,
+}
+--- entities/src/user.rs ---
+use super::date_serde;
+use super::datetime_serde;
+use chrono::{NaiveDate, NaiveDateTime};
+use enum2str::EnumStr;
+use partial_struct::Partial;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Partial)]
+#[partial(
+    "UserInfo",
+    derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq),
+    omit(password)
+)]
+#[partial(
+    "UserCreation",
+    derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq),
+    omit(id_user, registration_date, email_verified, user_rol)
+)]
+pub struct User {
+    pub id_user: Uuid,
+    pub first_name: String,
+    pub last_name: String,
+    #[serde(with = "date_serde")]
+    pub birth_date: NaiveDate,
+    #[serde(with = "datetime_serde")]
+    pub registration_date: NaiveDateTime,
+    pub email: String,
+    pub email_verified: bool,
+    pub phone_number: String,
+    pub country_code: String,
+    pub password: String,
+    pub identification_number: String,
+    pub identification_type: IdType,
+    pub user_rol: URol,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone)]
+pub struct UserLogInInfo {
+    pub identifier: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct DocInfo {
+    pub identification_number: String,
+    pub identification_type: IdType,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, EnumStr, Clone)]
+pub enum IdType {
+    #[default]
+    CC,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, EnumStr, Clone)]
+pub enum URol {
+    #[default]
+    USER,
+    ADMIN,
+    TRAINER,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UserRole {
+    pub user_rol: URol,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IdentificationInfo {
+    pub identification_type: IdType,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UserCategory {
+    pub id_user: Uuid,
+    pub id_category: Uuid,
+    pub user_level: String,
+}
+--- http_api/src/auth.rs ---
+use axum::{
+    extract::{Request, State},
+    http::StatusCode,
+    middleware::Next,
+    response::IntoResponse,
+};
+use chrono::Utc;
+use entities::user::URol;
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use serde::{Deserialize, Serialize};
+use tracing::{error, info};
+use use_cases::user_service::LogInResponse;
+use uuid::Uuid;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Claims {
+    sub: Uuid, // User id,
+    exp: usize,
+    iat: usize,
+    user_rol: URol,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UserInfoAuth {
+    pub user_id: Uuid, // User id,
+    pub user_rol: URol,
+}
+
+pub fn generate_jwt(
+    log_in_response: &LogInResponse,
+    token_key: &str,
+) -> Result<String, jsonwebtoken::errors::Error> {
+    let now = Utc::now().timestamp() as usize;
+
+    let my_claims = Claims {
+        sub: log_in_response.user_id,
+        exp: now + 3600,
+        iat: now,
+        user_rol: log_in_response.user_rol.clone(),
+    };
+
+    let token = encode(
+        &Header::default(),
+        &my_claims,
+        &EncodingKey::from_secret(token_key.as_ref()),
+    );
+
+    token
+}
+
+fn decode_jwt(token_key: &str, token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
+    let my_claims = decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(token_key.as_ref()),
+        &Validation::default(),
+    )?;
+
+    Ok(my_claims.claims)
+}
+
+pub async fn auth_middleware(
+    State(jwt_secret): State<String>,
+    mut request: Request,
+    next: Next,
+) -> Result<impl IntoResponse, StatusCode> {
+    let auth_header = request
+        .headers()
+        .get("Authorization")
+        .and_then(|h| h.to_str().ok());
+
+    let jwt_token_string = match auth_header {
+        Some(header_value) if header_value.starts_with("Bearer ") => {
+            &header_value[7..] // Remove "Bearer " prefix
+        }
+        _ => return Err(StatusCode::UNAUTHORIZED),
+    };
+
+    info!("The token is: |{jwt_token_string}|");
+
+    let claims = decode_jwt(&jwt_secret, jwt_token_string).map_err(|err| {
+        error!("Error in token verification: {err}");
+        StatusCode::UNAUTHORIZED
+    })?;
+
+    request.extensions_mut().insert(UserInfoAuth {
+        user_id: claims.sub,
+        user_rol: claims.user_rol,
+    });
+
+    let response = next.run(request).await;
+
+    Ok(response)
+}
+--- http_api/src/category_endpoints.rs ---
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::{delete, get, post, put},
+    Json, Router,
+};
+use entities::{
+    category::{Category, CategoryRequirement},
+    user::UserCategory,
+};
+use tracing::error;
+use use_cases::category_service::{err::Error, CategoryService};
+use uuid::Uuid;
+
+use super::err::{HttpError, ToErrResponse};
+use crate::err::HttpResult;
+
+pub fn category_router(category_service: CategoryService) -> Router {
+    Router::new()
+        .route("/health-category", get(alive))
+        .route(
+            "/categories",
+            post(create_category)
+                .get(list_categories)
+                .put(update_category),
+        )
+        .route(
+            "/categories/{id}",
+            get(get_category).delete(delete_category),
+        )
+        .route(
+            "/categories/{id}/requirements",
+            post(add_requirement).get(get_requirements),
+        )
+        .route("/categories/{id}/users/{user_id}", get(get_user_category))
+        .with_state(category_service)
+}
+
+async fn alive() -> &'static str {
+    "Category service is alive"
+}
+
+async fn create_category(
+    State(category_service): State<CategoryService>,
+    Json(category): Json<Category>,
+) -> HttpResult<impl IntoResponse> {
+    category_service
+        .add_category(category)
+        .await
+        .http_err("create category")?;
+
+    Ok((StatusCode::OK, "Category created successfully"))
+}
+
+async fn get_category(
+    State(category_service): State<CategoryService>,
+    Path(id): Path<Uuid>,
+) -> HttpResult<Json<Category>> {
+    let category = category_service
+        .get_category_by_id(id)
+        .await
+        .http_err("get category")?;
+
+    Ok(Json(category))
+}
+
+async fn update_category(
+    State(category_service): State<CategoryService>,
+    Json(category): Json<Category>,
+) -> Result<Json<Category>, Response> {
+    category_service
+        .update_category(&category)
+        .await
+        .http_err("update category")?;
+
+    Ok(Json(category))
+}
+
+async fn delete_category(
+    State(category_service): State<CategoryService>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<String>, Response> {
+    category_service
+        .delete_category(id)
+        .await
+        .http_err("delete category")?;
+
+    Ok(Json("Category deleted successfully".to_string()))
+}
+
+async fn list_categories(
+    State(category_service): State<CategoryService>,
+) -> Result<Json<Vec<Category>>, Response> {
+    let categories = category_service
+        .get_all_categories()
+        .await
+        .http_err("list categories")?;
+
+    Ok(Json(categories))
+}
+
+async fn add_requirement(
+    State(category_service): State<CategoryService>,
+    Json(requirement): Json<CategoryRequirement>,
+) -> Result<Json<CategoryRequirement>, Response> {
+    category_service
+        .add_category_requirement(&requirement)
+        .await
+        .http_err("add requirement")?;
+
+    Ok(Json(requirement))
+}
+
+async fn get_requirements(
+    State(category_service): State<CategoryService>,
+    Path(category_id): Path<Uuid>,
+) -> Result<Json<Vec<CategoryRequirement>>, Response> {
+    let requirements = category_service
+        .get_category_requirements(category_id)
+        .await
+        .http_err("get requirements")?;
+
+    Ok(Json(requirements))
+}
+
+async fn get_user_category(
+    State(category_service): State<CategoryService>,
+    Path((category_id, user_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<Option<UserCategory>>, Response> {
+    let user_category = category_service
+        .get_user_category(user_id, category_id)
+        .await
+        .http_err("get user category")?;
+
+    Ok(Json(user_category))
+}
+
+impl<T> HttpError<T> for use_cases::category_service::err::Result<T> {
+    fn http_err(self, endpoint_name: &str) -> crate::err::HttpResult<T> {
+        self.map_err(|err| {
+            error!("Error in: {endpoint_name}");
+            match err {
+                Error::UnknownDatabaseError(error) => {
+                    error!("{error}");
+                    "We are having problems in the server, try again"
+                }
+                Error::CategoryNotFound => "Category not found",
+                Error::CategoryAlreadyExists => "Category already exists",
+                Error::InvalidAgeRange => "Invalid age range",
+                Error::MissingName => "Category name is required",
+                Error::RequirementNotFound => "Category requirement not found",
+                Error::UserAlreadyHasCategory => "User already has this category",
+                Error::UserDoesNotMeetRequirements => "User does not meet category requirements",
+                Error::LevelNotFound => "Level not found",
+            }
+            .to_err_response()
+        })
+    }
+}
+--- http_api/src/err.rs ---
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
+
+pub type HttpResult<T> = std::result::Result<T, Response>;
+
+pub trait HttpError<T> {
+    fn http_err(self, endpoint: &str) -> HttpResult<T>;
+}
+
+pub trait ToErrResponse {
+    fn to_err_response(self) -> Response;
+}
+
+impl ToErrResponse for &str {
+    fn to_err_response(self) -> Response {
+        (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
+    }
+}
+
+impl ToErrResponse for String {
+    fn to_err_response(self) -> Response {
+        (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
+    }
+}
+--- http_api/src/main.rs ---
+use std::{
+    net::{Ipv4Addr, SocketAddrV4},
+    sync::Arc,
+};
+
+use axum::Router;
+use serde::Deserialize;
+use tower_http::cors::CorsLayer;
+use tracing::{error, info};
+use turso_db::TursoDb;
+use use_cases::{
+    category_service::CategoryService, tournament_service::TournamentService,
+    user_service::UserService,
+};
+
+mod auth;
+mod category_endpoints;
+mod err;
+mod tournament_endpoints;
+mod user_endpoints;
+
+#[derive(Debug, Deserialize)]
+struct Config {
+    db_url: String,
+    db_token: String,
+    port: u16,
+    token_key: String,
+}
+
+#[tokio::main]
+async fn main() {
+    let _ = dotenvy::dotenv();
+    tracing_subscriber::fmt::init();
+
+    let config: Config = envy::from_env().expect("Error generating config with the .env file");
+
+    let mut main_router = Router::new();
+
+    let turso_db = TursoDb::from(&config.db_url, &config.db_token)
+        .await
+        .inspect_err(|err| error!("Error creating turso db: {err}"))
+        .expect("Error creating turso db");
+
+    let password_hasher = bcrypt_hasher::BcryptHasher;
+
+    let user_service = UserService::new(Arc::new(turso_db.clone()), Arc::new(password_hasher));
+    let tournament_service = TournamentService::new(
+        Arc::new(turso_db.clone()),
+        Arc::new(turso_db.clone()),
+        Arc::new(turso_db.clone()),
+    );
+    let category_service = CategoryService::new(
+        Arc::new(turso_db.clone()),
+        Arc::new(turso_db.clone()),
+        Arc::new(turso_db.clone()),
+    );
+
+    main_router = main_router.merge(user_endpoints::user_router(user_service, &config.token_key));
+
+    main_router = main_router.merge(tournament_endpoints::tournament_router(tournament_service));
+
+    main_router = main_router.merge(category_endpoints::category_router(category_service));
+
+    let cors_layer = CorsLayer::permissive();
+
+    main_router = main_router.layer(cors_layer);
+
+    let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), config.port);
+
+    info!("Starting server in the addr: {addr}");
+
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+
+    axum::serve(listener, main_router).await.unwrap();
+}
+--- http_api/src/tournament_endpoints.rs ---
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::{get, post, put},
+    Json, Router,
+};
+use entities::tournament::{
+    Tournament, TournamentAttendance, TournamentCreation, TournamentRegistration,
+};
+use tracing::error;
+use use_cases::tournament_service::{err::Error, TournamentService};
+use uuid::Uuid;
+
+use crate::err::{HttpError, HttpResult, ToErrResponse};
+
+pub fn tournament_router(tournament_service: TournamentService) -> Router {
+    Router::new()
+        .route("/health-tournament", get(alive))
+        .route(
+            "/tournaments",
+            post(create_tournament).get(list_tournaments),
+        )
+        .route(
+            "/tournaments/{id}",
+            get(get_tournament)
+                .put(update_tournament)
+                .delete(delete_tournament),
+        )
+        .route("/tournaments/{id}/register", post(register_user))
+        .route("/tournaments/{id}/attendance", post(record_attendance))
+        .route("/tournaments/{id}/position", put(update_position))
+        .with_state(tournament_service)
+}
+
+async fn alive() -> &'static str {
+    "Tournament service is alive"
+}
+
+async fn create_tournament(
+    State(tournament_service): State<TournamentService>,
+    Json(tournament): Json<TournamentCreation>,
+) -> HttpResult<impl IntoResponse> {
+    tournament_service
+        .create_tournament(tournament)
+        .await
+        .http_err("create tournament")?;
+
+    Ok((StatusCode::OK, "Tournament created successfully"))
+}
+
+async fn get_tournament(
+    State(tournament_service): State<TournamentService>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Tournament>, Response> {
+    let tournament = tournament_service
+        .get_tournament(id)
+        .await
+        .http_err("get tournament")?;
+
+    Ok(Json(tournament))
+}
+
+async fn update_tournament(
+    State(tournament_service): State<TournamentService>,
+    Json(tournament): Json<Tournament>,
+) -> Result<(), Response> {
+    tournament_service
+        .update_tournament(tournament)
+        .await
+        .http_err("update tournament")?;
+
+    Ok(())
+}
+
+async fn delete_tournament(
+    State(tournament_service): State<TournamentService>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<String>, Response> {
+    tournament_service
+        .delete_tournament(id)
+        .await
+        .http_err("delete tournament")?;
+
+    Ok(Json("Tournament deleted successfully".to_string()))
+}
+
+async fn list_tournaments(
+    State(tournament_service): State<TournamentService>,
+) -> Result<Json<Vec<Tournament>>, Response> {
+    let tournaments = tournament_service
+        .list_tournaments()
+        .await
+        .http_err("list tournaments")?;
+
+    let tournaments_dto = tournaments.into_iter().collect();
+    Ok(Json(tournaments_dto))
+}
+
+async fn register_user(
+    State(tournament_service): State<TournamentService>,
+    Json(registration): Json<TournamentRegistration>,
+) -> Result<Json<String>, Response> {
+    tournament_service
+        .register_user(registration)
+        .await
+        .http_err("register user")?;
+
+    Ok(Json("User registered successfully".to_string()))
+}
+
+async fn record_attendance(
+    State(tournament_service): State<TournamentService>,
+    Json(attendance): Json<TournamentAttendance>,
+) -> Result<Json<String>, Response> {
+    tournament_service
+        .record_attendance(attendance)
+        .await
+        .http_err("record attendance")?;
+
+    Ok(Json("Attendance recorded successfully".to_string()))
+}
+
+async fn update_position(
+    State(tournament_service): State<TournamentService>,
+    Path((tournament_id, user_id)): Path<(Uuid, Uuid)>,
+    Json(position): Json<i32>,
+) -> Result<Json<String>, Response> {
+    tournament_service
+        .update_position(tournament_id, user_id, position)
+        .await
+        .http_err("update position")?;
+
+    Ok(Json("Position updated successfully".to_string()))
+}
+
+impl<T> HttpError<T> for use_cases::tournament_service::err::Result<T> {
+    fn http_err(self, endpoint_name: &str) -> crate::err::HttpResult<T> {
+        self.map_err(|err| {
+            error!("Error in: {endpoint_name}");
+            match err {
+                Error::UnknownDatabaseError(error) => {
+                    error!("{error}");
+                    "We are having problems in the server, try again"
+                }
+                Error::TournamentNotFound => "Tournament not found",
+                Error::UserNotRegistered => "User not registered for tournament",
+                Error::UserAlreadyRegistered => "User already registered",
+                Error::InvalidDates => "Invalid tournament dates",
+                Error::InvalidCategory => "Invalid category",
+                Error::NegativePosition => "Position must be positive",
+                Error::PositionAlreadyTaken => "Position already taken",
+                Error::UserDidNotAttend => "User did not attend tournament",
+            }
+            .to_err_response()
+        })
+    }
+}
+--- http_api/src/user_endpoints.rs ---
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Json, Router,
+};
+
+use super::err::ToErrResponse;
+
+use entities::user::{URol, UserCreation, UserInfo, UserLogInInfo};
+use serde::{Deserialize, Serialize};
+use tracing::error;
+use use_cases::user_service::{
+    err::{self, Error},
+    UserService,
+};
+use uuid::Uuid;
+
+use crate::{
+    auth::generate_jwt,
+    err::{HttpError, HttpResult},
+};
+
+pub fn user_router(user_service: UserService, token_key: &str) -> Router {
+    Router::new()
+        .route("/health-user", get(alive))
+        .route("/register", post(register_user))
+        .route("/logIn", post(log_in_user))
+        .route("/users", get(get_all_users))
+        .route("/users/{id}", get(get_user_by_id))
+        .with_state((user_service, token_key.to_string()))
+}
+
+async fn get_all_users(
+    State((user_service, _)): State<(UserService, String)>,
+) -> Result<Json<Vec<UserInfo>>, Response> {
+    let users = user_service
+        .get_all_users()
+        .await
+        .http_err("get all users")?;
+
+    Ok(Json(users))
+}
+
+async fn get_user_by_id(
+    State((user_service, _)): State<(UserService, String)>,
+    Path(user_id): Path<Uuid>,
+) -> Result<Json<UserInfo>, Response> {
+    let user = user_service
+        .get_user_by_id(user_id)
+        .await
+        .http_err("get user by id")?;
+
+    Ok(Json(user))
+}
+
+async fn alive() -> Result<Json<String>, Response> {
+    "The user router is alive";
+
+    Ok(Json("I am alive".to_string()))
+
+    // Example Error Err((StatusCode::INTERNAL_SERVER_ERROR, error_message))
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+struct LogInResponse {
+    token: String,
+    user_rol: URol,
+}
+
+async fn log_in_user(
+    State((user_service, token_key)): State<(UserService, String)>,
+    Json(user_log_in_info): Json<UserLogInInfo>,
+) -> Result<Json<LogInResponse>, Response> {
+    let log_in_response = user_service
+        .log_in_user(&user_log_in_info)
+        .await
+        .http_err("log in user")?;
+
+    let token = generate_jwt(&log_in_response, &token_key).http_err("log in user")?;
+
+    Ok(Json(LogInResponse {
+        token,
+        user_rol: log_in_response.user_rol,
+    }))
+}
+
+//async fn log_in_user(
+//    State((user_service, token_key)): State<(UserService, String)>,
+//    Json(user_log_in_info): Json<UserLogInInfo>,
+//) -> Result<Json<LogInResponse>, Response> {
+//    let log_in_response = user_service
+//        .log_in_user(&user_log_in_info)
+//        .await
+//        .map_err(|err| internal_error_response(&message_from_err(err, "log in user")))?;
+//
+//    let token = generate_jwt(&log_in_response, &token_key).map_err(|err| {
+//        error!("Error log in user, generating jwt: {}", err.to_string());
+//        internal_error_response("Internal error generating token")
+//    })?;
+//
+//    Ok(Json(LogInResponse {
+//        token,
+//        user_rol: log_in_response.user_rol,
+//    }))
+//}
+
+async fn register_user(
+    State((user_service, _)): State<(UserService, String)>,
+    Json(user_creation): Json<UserCreation>,
+) -> HttpResult<impl IntoResponse> {
+    user_service
+        .register_user(user_creation)
+        .await
+        .http_err("register user")?;
+
+    Ok((StatusCode::OK, "User added succesfully"))
+}
+
+//async fn register_user(
+//    State((user_service, _)): State<(UserService, String)>,
+//    Json(user_creation): Json<UserCreation>,
+//) -> impl IntoResponse {
+//    if let Err(err) = user_service.register_user(user_creation).await {
+//        (
+//            StatusCode::INTERNAL_SERVER_ERROR,
+//            message_from_err(err, "register user"),
+//        )
+//    } else {
+//        (StatusCode::OK, "User added succesfully".into())
+//    }
+//}
+
+impl<T> HttpError<T> for Result<T, jsonwebtoken::errors::Error> {
+    fn http_err(self, endpoint: &str) -> HttpResult<T> {
+        self.map_err(|err| {
+            format!("{endpoint}: Error with json web token: {err}").to_err_response()
+        })
+    }
+}
+
+impl<T> HttpError<T> for err::Result<T> {
+    fn http_err(self, endpoint_name: &str) -> crate::err::HttpResult<T> {
+        self.map_err(|err| {
+            error!("Error in: {endpoint_name}");
+            match err {
+                Error::UnknownDatabaseError(error) => {
+                    error!("{error}");
+                    "We are having problems in the server, try again"
+                }
+                Error::UserIdDontExist => "Unable to find user with the provided id",
+                Error::ErrorHashing(error) => {
+                    error!("{error}");
+                    "We are having problems in the server, try again"
+                }
+                Error::ErrorVerificationHash(error) => {
+                    error!("{error}");
+                    "We are having problems in the server, try again"
+                }
+                Error::InvalidPassword => "The password is invalid, try again",
+                Error::EmailAlreadyExists => "Email is already in use, try with other email",
+                Error::PhoneAlreadyExists => "Phone is already in use, try with other phone",
+                Error::DocumentAlreadyExists => {
+                    "Document is already in use, try with other document"
+                }
+                Error::InvalidIdentifier => {
+                    "There is not an user registered with the provided identifier"
+                }
+            }
+            .to_err_response()
+        })
+    }
+}
+--- turso_db/src/category_repo/mod.rs ---
+use async_trait::async_trait;
+use entities::category::{Category, CategoryRequirement};
+use entities::user::UserCategory;
+use libsql::{de, params};
+use use_cases::category_service::err::{Error, Result};
+use use_cases::category_service::repository_trait::{
+    CategoryRepository, CategoryRequirementRepository, UserCategoryRepository,
+};
+
+use uuid::Uuid;
+
+use crate::TursoDb;
+
+#[async_trait]
+impl CategoryRequirementRepository for TursoDb {
+    async fn create_category_requirement(&self, requirement: &CategoryRequirement) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        conn.execute("INSERT INTO category_requirement (id_category_requirement, id_category, requirement_description,
+required_level, deleted) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![requirement.id_category_requirement.to_string(), requirement.id_category.to_string(),
+                requirement.requirement_description.to_string(),
+            requirement.required_level.to_string()]).await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn get_category_requirements(
+        &self,
+        category_id: Uuid,
+    ) -> Result<Vec<CategoryRequirement>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT id_category_requirement, id_category, requirement_description, required_level, deleted 
+WHERE deleted = 0 AND id_category = ?1",
+                params![category_id.to_string()],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut res: Vec<CategoryRequirement> = Vec::new();
+
+        while let Some(res_row) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?
+        {
+            res.push(
+                de::from_row::<CategoryRequirement>(&res_row)
+                    .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?,
+            );
+        }
+
+        Ok(res)
+    }
+}
+
+#[async_trait]
+impl UserCategoryRepository for TursoDb {
+    async fn get_user_category(
+        &self,
+        id_user: Uuid,
+        id_category: Uuid,
+    ) -> Result<Option<UserCategory>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT id_category, id_user, user_level FROM user_category WHERE id_category = ?1 AND id_user = ?2 AND deleted = 0",
+                params![id_user.to_string(), id_category.to_string()],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        if let Some(rows_res) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?
+        {
+            let category = de::from_row::<UserCategory>(&rows_res)
+                .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+            return Ok(Some(category));
+        }
+        Ok(None)
+    }
+}
+
+#[async_trait]
+impl CategoryRepository for TursoDb {
+    async fn get_category_by_name(&self, name: &str) -> Result<Option<Category>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT id_category, name, min_age, max_age, deleted FROM category WHERE name = ?1 AND deleted = 0",
+                params![name],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        if let Some(rows_res) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?
+        {
+            let category = de::from_row::<Category>(&rows_res)
+                .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+            return Ok(Some(category));
+        }
+        Ok(None)
+    }
+
+    async fn create_category(&self, category: &Category) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        conn.execute(
+            "INSERT INTO category (id_category, name, min_age, max_age) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                category.id_category.to_string(),
+                *category.name,
+                category.min_age,
+                category.max_age
+            ],
+        )
+        .await
+        .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn get_category_by_id(&self, id: Uuid) -> Result<Option<Category>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT id_category, name, min_age, max_age, deleted FROM category WHERE id_category = ?1 AND deleted = 0",
+                params![id.to_string()],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        if let Some(rows_res) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?
+        {
+            let category = de::from_row::<Category>(&rows_res)
+                .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+            return Ok(Some(category));
+        }
+        Ok(None)
+    }
+
+    async fn update_category(&self, category: &Category) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        conn.execute(
+            "UPDATE category SET name = ?2, min_age = ?3, max_age = ?4 WHERE id_category = ?1",
+            params![
+                category.id_category.to_string(),
+                *category.name,
+                category.min_age,
+                category.max_age
+            ],
+        )
+        .await
+        .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn delete_category(&self, id: Uuid) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        conn.execute(
+            "UPDATE category SET deleted = 1 WHERE id_category = ?1",
+            params![id.to_string()],
+        )
+        .await
+        .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn list_categories(&self) -> Result<Vec<Category>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT id_category, name, min_age, max_age, deleted WHERE deleted = 0",
+                params![],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut res: Vec<Category> = Vec::new();
+
+        while let Some(res_row) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?
+        {
+            res.push(
+                de::from_row::<Category>(&res_row)
+                    .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?,
+            );
+        }
+
+        Ok(res)
+    }
+}
+--- turso_db/src/lib.rs ---
+use std::{error::Error, sync::Arc};
+
+use libsql::params;
+use libsql::{de, params::IntoParams, Connection, Rows};
+use serde::Deserialize;
+
+pub mod category_repo;
+mod migration;
+pub mod tournament_repo;
+pub mod training_repo;
+pub mod tuition_repo;
+pub mod user_repo;
+
+#[derive(Clone)]
+pub struct TursoDb {
+    db: Arc<libsql::Database>,
+    conn: Option<Connection>,
+}
+
+impl TursoDb {
+    pub async fn from(url: &str, token: &str) -> Result<TursoDb, Box<dyn Error>> {
+        let db = libsql::Builder::new_remote(url.to_string(), token.to_string())
+            .build()
+            .await?;
+
+        Ok(Self {
+            db: Arc::new(db),
+            conn: None,
+        })
+    }
+
+    async fn get_connection(&self) -> Result<libsql::Connection, Box<dyn Error>> {
+        match self.conn.clone() {
+            Some(conn) => Ok(conn),
+            None => Ok(self.db.connect()?),
+        }
+    }
+
+    async fn get_connection_with_error<E>(
+        &self,
+        error_builder: impl Fn(String) -> E,
+    ) -> Result<libsql::Connection, E> {
+        match self.conn.clone() {
+            Some(conn) => Ok(conn),
+            None => Ok(self
+                .db
+                .connect()
+                .map_err(|err| error_builder(format!("Error in connection: {err}"))))?,
+        }
+    }
+
+    pub async fn query_one_with_error<T, E>(
+        &self,
+        sql: &str,
+        params: impl IntoParams,
+        error_builder: impl Fn(String) -> E,
+    ) -> Result<Option<T>, E>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        let conn = self.get_connection_with_error(&error_builder).await?;
+
+        let rows = conn.query(sql, params).await;
+
+        let value: Option<T> = self.get_value_from_row(rows, error_builder).await?;
+
+        Ok(value)
+    }
+
+    pub async fn query_many_with_error<T, E>(
+        &self,
+        sql: &str,
+        params: impl IntoParams,
+        error_builder: impl Fn(String) -> E,
+    ) -> Result<Vec<T>, E>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        let conn = self.get_connection_with_error(&error_builder).await?;
+
+        let rows = conn.query(sql, params).await;
+
+        let value: Vec<T> = self.get_values_from_rows(rows, error_builder).await?;
+
+        Ok(value)
+    }
+
+    pub async fn execute_with_error<E>(
+        &self,
+        sql: &str,
+        params: impl IntoParams,
+        error_builder: impl Fn(String) -> E,
+    ) -> Result<(), E> {
+        let conn = self.get_connection_with_error(&error_builder).await?;
+
+        conn.execute(sql, params)
+            .await
+            .map_err(|err| error_builder(err.to_string()))?;
+
+        Ok(())
+    }
+
+    pub async fn get_values_from_rows<T, E>(
+        &self,
+        rows: Result<Rows, libsql::Error>,
+        error_builder: impl Fn(String) -> E,
+    ) -> Result<Vec<T>, E>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        let mut rows = rows.map_err(|err| error_builder(err.to_string()))?;
+
+        let mut elements = Vec::new();
+
+        while let Some(row_result) = rows
+            .next()
+            .await
+            .map_err(|err| error_builder(err.to_string()))?
+        {
+            let element =
+                de::from_row::<T>(&row_result).map_err(|err| error_builder(err.to_string()))?;
+            elements.push(element);
+        }
+
+        Ok(elements)
+    }
+
+    pub async fn get_value_from_row<T, E>(
+        &self,
+        rows: Result<Rows, libsql::Error>,
+        error_builder: impl Fn(String) -> E,
+    ) -> Result<Option<T>, E>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        let mut rows = rows.map_err(|err| error_builder(err.to_string()))?;
+
+        if let Some(row_result) = rows
+            .next()
+            .await
+            .map_err(|err| error_builder(err.to_string()))?
+        {
+            let element =
+                de::from_row::<T>(&row_result).map_err(|err| error_builder(err.to_string()))?;
+
+            Ok(Some(element))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+pub struct TestDbBuilder {
+    db: Arc<libsql::Database>,
+    conn: Connection,
+}
+
+impl TestDbBuilder {
+    pub async fn create() -> Self {
+        let db = libsql::Builder::new_local(":memory:")
+            .build()
+            .await
+            .expect("Error building in memory db");
+
+        let conn = db.connect().expect("Error getting connection");
+
+        let turso_db = Self {
+            db: Arc::new(db),
+            conn: conn.clone(),
+        };
+
+        conn.execute_batch(&migration::get_migration())
+            .await
+            .expect("Error applying migration");
+
+        println!("Migration applied successfully");
+
+        turso_db
+    }
+
+    pub async fn create_full() -> TursoDb {
+        Self::create()
+            .await
+            .apply_doc_types()
+            .await
+            .apply_user_roles()
+            .await
+            .build()
+    }
+
+    pub async fn print_tables(&self) {
+        let conn = self.conn.clone();
+
+        let mut rows = conn
+            .query(
+                "
+SELECT name, sql
+FROM sqlite_master
+WHERE type = 'table';
+",
+                params![],
+            )
+            .await
+            .expect("Error getting tables info");
+
+        while let Some(row) = rows.next().await.unwrap() {
+            let table_name = row.get_str(0).unwrap_or("Unknown table");
+            let table_sql = row.get_str(1).unwrap_or("No SQL available");
+            println!("Table: {}\nSQL: {}\n", table_name, table_sql);
+        }
+    }
+
+    pub async fn apply_doc_types(self) -> Self {
+        self.conn
+            .execute(
+                "INSERT INTO identification_type (identification_type, deleted) 
+VALUES ('CC', false)",
+                params![],
+            )
+            .await
+            .unwrap();
+
+        self
+    }
+
+    pub async fn apply_user_roles(self) -> Self {
+        self.conn
+            .execute(
+                "INSERT INTO user_rol (user_rol, deleted) 
+VALUES ('ADMIN', 0), ('USER', 0), ('TRAINER', 0)",
+                params![],
+            )
+            .await
+            .unwrap();
+
+        self
+    }
+
+    pub async fn apply_levels(self) -> Self {
+        self.conn
+            .execute(
+                "INSERT INTO user_rol (user_rol) 
+VALUES ('BEGGINER'), ('AMATEUR'), ('PROFESSIONAL')",
+                params![],
+            )
+            .await
+            .unwrap();
+
+        self
+    }
+
+    pub fn build(self) -> TursoDb {
+        TursoDb {
+            db: self.db,
+            conn: Some(self.conn),
+        }
+    }
+}
+--- turso_db/src/migration.rs ---
+pub fn get_migration() -> String {
+    r#"
+PRAGMA foreign_keys = ON;
+
+----------------------------------------------------------------
+-- 1) user_rol
+----------------------------------------------------------------
+CREATE TABLE user_rol (
+    user_rol       TEXT PRIMARY KEY,
+    deleted        INTEGER NOT NULL DEFAULT 0  -- 0 = false, 1 = true
+);
+
+----------------------------------------------------------------
+-- 2) identification_type
+----------------------------------------------------------------
+CREATE TABLE identification_type (
+    identification_type  TEXT PRIMARY KEY,
+    deleted             INTEGER NOT NULL DEFAULT 0
+);
+
+----------------------------------------------------------------
+-- 3) category
+----------------------------------------------------------------
+CREATE TABLE category (
+    id_category   TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    min_age       INTEGER NOT NULL,
+    max_age       INTEGER NOT NULL,
+    deleted       INTEGER NOT NULL DEFAULT 0
+);
+
+----------------------------------------------------------------
+-- 4) level
+----------------------------------------------------------------
+CREATE TABLE level (
+    level_name    TEXT PRIMARY KEY,
+    deleted       INTEGER NOT NULL DEFAULT 0
+);
+
+----------------------------------------------------------------
+-- 5) person (quoted because 'user' can be a reserved keyword)
+----------------------------------------------------------------
+CREATE TABLE person (
+    id_user                TEXT PRIMARY KEY,
+    first_name             TEXT NOT NULL,
+    last_name              TEXT NOT NULL,
+    birth_date             TEXT NOT NULL,             -- Example: 'YYYY-MM-DD'
+    registration_date      TEXT NOT NULL,             -- Example: 'YYYY-MM-DD HH:MM:SS'
+    email                  TEXT NOT NULL UNIQUE,
+    email_verified         INTEGER NOT NULL DEFAULT 0,  -- 0 = false, 1 = true
+    phone_number           TEXT NOT NULL,
+    country_code           TEXT NOT NULL,
+    password               TEXT NOT NULL,
+    identification_number  TEXT NOT NULL,
+    identification_type    TEXT NOT NULL,
+    user_rol               TEXT NOT NULL,
+    deleted                INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (identification_type) REFERENCES identification_type(identification_type),
+    FOREIGN KEY (user_rol) REFERENCES user_rol(user_rol)
+);
+
+----------------------------------------------------------------
+-- 6) category_requirement
+----------------------------------------------------------------
+CREATE TABLE category_requirement (
+    id_category_requirement   TEXT PRIMARY KEY,
+    id_category               TEXT NOT NULL,
+    requirement_description   TEXT,
+    required_level            TEXT NOT NULL,
+    deleted                   INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (id_category)    REFERENCES category(id_category),
+    FOREIGN KEY (required_level) REFERENCES level(level_name)
+);
+
+----------------------------------------------------------------
+-- 7) user_category
+----------------------------------------------------------------
+CREATE TABLE user_category (
+    id_user      TEXT NOT NULL,
+    id_category  TEXT NOT NULL,
+    user_level   TEXT NOT NULL,
+    deleted      INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (id_user, id_category),
+    FOREIGN KEY (id_user)     REFERENCES person(id_user),
+    FOREIGN KEY (id_category) REFERENCES category(id_category),
+    FOREIGN KEY (user_level)  REFERENCES level(level_name)
+);
+
+----------------------------------------------------------------
+-- 8) tournament
+----------------------------------------------------------------
+CREATE TABLE tournament (
+    id_tournament  TEXT PRIMARY KEY,
+    name           TEXT NOT NULL,
+    id_category    TEXT NOT NULL,
+    start_datetime TEXT NOT NULL,     -- Example: 'YYYY-MM-DD HH:MM:SS'
+    end_datetime   TEXT NOT NULL,     -- Example: 'YYYY-MM-DD HH:MM:SS'
+    deleted        INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (id_category) REFERENCES category(id_category)
+);
+
+----------------------------------------------------------------
+-- 9) tournament_registration
+----------------------------------------------------------------
+CREATE TABLE tournament_registration (
+    id_tournament        TEXT NOT NULL,
+    id_user              TEXT NOT NULL,
+    registration_datetime  TEXT NOT NULL,  -- Example: 'YYYY-MM-DD HH:MM:SS'
+    deleted              INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (id_tournament, id_user),
+    FOREIGN KEY (id_tournament) REFERENCES tournament(id_tournament),
+    FOREIGN KEY (id_user)       REFERENCES person(id_user)
+);
+
+----------------------------------------------------------------
+-- 10) tournament_attendance
+----------------------------------------------------------------
+CREATE TABLE tournament_attendance (
+    id_tournament       TEXT NOT NULL,
+    id_user             TEXT NOT NULL,
+    attendance_datetime TEXT NOT NULL,   -- Example: 'YYYY-MM-DD HH:MM:SS'
+    position            INTEGER NOT NULL,
+    deleted             INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (id_tournament, id_user),
+    FOREIGN KEY (id_tournament) REFERENCES tournament(id_tournament),
+    FOREIGN KEY (id_user)       REFERENCES person(id_user)
+);
+
+----------------------------------------------------------------
+-- 11) training
+----------------------------------------------------------------
+CREATE TABLE training (
+    id_training    TEXT PRIMARY KEY,
+    name           TEXT NOT NULL,
+    id_category    TEXT NOT NULL,
+    start_datetime TEXT NOT NULL,
+    end_datetime   TEXT NOT NULL,
+    minimum_payment REAL,
+    deleted        INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (id_category) REFERENCES category(id_category)
+);
+
+----------------------------------------------------------------
+-- 12) training_registration
+----------------------------------------------------------------
+CREATE TABLE training_registration (
+    id_training          TEXT NOT NULL,
+    id_user              TEXT NOT NULL,
+    registration_datetime TEXT NOT NULL,   -- Example: 'YYYY-MM-DD HH:MM:SS'
+    attended            INTEGER NOT NULL DEFAULT 0,  -- 0 = false, 1 = true
+    attendance_datetime TEXT NOT NULL,    -- Example: 'YYYY-MM-DD HH:MM:SS'
+    deleted             INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (id_training, id_user),
+    FOREIGN KEY (id_training) REFERENCES training(id_training),
+    FOREIGN KEY (id_user)     REFERENCES person(id_user)
+);
+
+----------------------------------------------------------------
+-- 13) tuition
+----------------------------------------------------------------
+CREATE TABLE tuition (
+    id_tuition   TEXT PRIMARY KEY,
+    id_user      TEXT NOT NULL,
+    amount       REAL NOT NULL,
+    payment_date TEXT NOT NULL,  -- Example: 'YYYY-MM-DD HH:MM:SS'
+    deleted      INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (id_user) REFERENCES person(id_user)
+);
+"#
+    .to_string()
+}
+--- turso_db/src/tournament_repo/mod.rs ---
+use async_trait::async_trait;
+use entities::tournament::{Tournament, TournamentAttendance, TournamentRegistration};
+use libsql::{de, params};
+use use_cases::tournament_service::err::{Error, Result};
+use use_cases::tournament_service::repository_trait::{
+    TournamentAttendanceRepository, TournamentRegistrationRepository, TournamentRepository,
+};
+use uuid::{uuid, Uuid};
+
+use crate::TursoDb;
+
+#[async_trait]
+impl TournamentRepository for TursoDb {
+    async fn create_tournament(&self, tournament: &Tournament) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        conn.execute(
+            "INSERT INTO tournament (
+                id_tournament, name, id_category, start_datetime, end_datetime, deleted
+            ) VALUES (?1, ?2, ?3, ?4, ?5, 0)",
+            params![
+                tournament.id_tournament.to_string(),
+                tournament.name.to_string(),
+                tournament.id_category.to_string(),
+                tournament
+                    .start_datetime
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+                tournament
+                    .end_datetime
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+            ],
+        )
+        .await
+        .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        Ok(())
+    }
+
+    async fn get_tournament_by_id(&self, id: Uuid) -> Result<Option<Tournament>> {
+        let conn = self
+            .get_connection_with_error(Error::UnknownDatabaseError)
+            .await?;
+
+        let rows = conn
+            .query(
+                "SELECT id_tournament, name, id_category, start_datetime, end_datetime 
+                 FROM tournament 
+                 WHERE id_tournament = ?1 AND deleted = 0",
+                params![id.to_string()],
+            )
+            .await;
+
+        self.get_value_from_row(rows, Error::UnknownDatabaseError)
+            .await
+    }
+
+    async fn update_tournament(&self, tournament: &Tournament) -> Result<()> {
+        self.execute_with_error(
+            "UPDATE tournament SET 
+                name = ?1, 
+                id_category = ?2, 
+                start_datetime = ?3, 
+                end_datetime = ?4
+             WHERE id_tournament = ?5",
+            params![
+                tournament.name.to_string(),
+                tournament.id_category.to_string(),
+                tournament
+                    .start_datetime
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+                tournament
+                    .end_datetime
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+                tournament.id_tournament.to_string(),
+            ],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
+    // async fn update_tournament(&self, tournament: &Tournament) -> Result<()> {
+    //     let conn = self
+    //         .get_connection()
+    //         .await
+    //         .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+    //
+    //     conn.execute(
+    //         "UPDATE tournament SET
+    //             name = ?1,
+    //             id_category = ?2,
+    //             start_datetime = ?3,
+    //             end_datetime = ?4,
+    //             deleted = ?5
+    //          WHERE id_tournament = ?6",
+    //         params![
+    //             tournament.name.to_string(),
+    //             tournament.id_category.to_string(),
+    //             tournament
+    //                 .start_datetime
+    //                 .format("%Y-%m-%d %H:%M:%S")
+    //                 .to_string(),
+    //             tournament
+    //                 .end_datetime
+    //                 .format("%Y-%m-%d %H:%M:%S")
+    //                 .to_string(),
+    //             tournament.deleted as i32,
+    //             tournament.id_tournament.to_string(),
+    //         ],
+    //     )
+    //     .await
+    //     .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+    //
+    //     Ok(())
+    // }
+
+    async fn delete_tournament(&self, id: Uuid) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        conn.execute(
+            "UPDATE tournament SET deleted = 1 WHERE id_tournament = ?1",
+            params![id.to_string()],
+        )
+        .await
+        .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        Ok(())
+    }
+
+    async fn list_tournaments(&self) -> Result<Vec<Tournament>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT id_tournament, name, id_category, start_datetime, end_datetime 
+                 FROM tournament 
+                 WHERE deleted = 0",
+                params![],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        let mut tournaments = Vec::new();
+        while let Some(row_result) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
+        {
+            let tournament = de::from_row::<Tournament>(&row_result)
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+            tournaments.push(tournament);
+        }
+
+        Ok(tournaments)
+    }
+}
+
+#[async_trait]
+impl TournamentRegistrationRepository for TursoDb {
+    async fn register_user_for_tournament(
+        &self,
+        registration: &TournamentRegistration,
+    ) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        conn.execute(
+            "INSERT INTO tournament_registration (
+                id_tournament, id_user, registration_datetime
+            ) VALUES (?1, ?2, ?3)",
+            params![
+                registration.id_tournament.to_string(),
+                registration.id_user.to_string(),
+                registration
+                    .registration_datetime
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+            ],
+        )
+        .await
+        .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        Ok(())
+    }
+
+    async fn get_tournament_registrations(
+        &self,
+        tournament_id: Uuid,
+    ) -> Result<Vec<TournamentRegistration>> {
+        self.query_many_with_error(
+            "SELECT id_tournament, id_user, registration_datetime 
+                FROM tournament_registration 
+                WHERE id_tournament = ?1 AND deleted = 0",
+            params![tournament_id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
+    // async fn get_tournament_registrations(
+    //     &self,
+    //     tournament_id: Uuid,
+    // ) -> Result<Vec<TournamentRegistration>> {
+    //     let conn = self
+    //         .get_connection()
+    //         .await
+    //         .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+    //
+    //     let mut rows = conn
+    //         .query(
+    //             "SELECT id_tournament, id_user, registration_datetime
+    //              FROM tournament_registration
+    //              WHERE id_tournament = ?1 AND deleted = 0",
+    //             params![tournament_id.to_string()],
+    //         )
+    //         .await
+    //         .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+    //
+    //     let mut registrations = Vec::new();
+    //     while let Some(row_result) = rows
+    //         .next()
+    //         .await
+    //         .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
+    //     {
+    //         let registration = de::from_row::<TournamentRegistration>(&row_result)
+    //             .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+    //         registrations.push(registration);
+    //     }
+    //
+    //     Ok(registrations)
+    // }
+}
+
+#[async_trait]
+impl TournamentAttendanceRepository for TursoDb {
+    async fn record_tournament_attendance(&self, attendance: &TournamentAttendance) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        conn.execute(
+            "INSERT INTO tournament_attendance (
+                id_tournament, id_user, attendance_datetime, position
+            ) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                attendance.id_tournament.to_string(),
+                attendance.id_user.to_string(),
+                attendance
+                    .attendance_datetime
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+                attendance.position,
+            ],
+        )
+        .await
+        .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        Ok(())
+    }
+
+    async fn get_tournament_attendance(
+        &self,
+        tournament_id: Uuid,
+    ) -> Result<Vec<TournamentAttendance>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT id_tournament, id_user, attendance_datetime, position 
+                 FROM tournament_attendance 
+                 WHERE id_tournament = ?1 AND deleted = 0",
+                params![tournament_id.to_string()],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        let mut attendances = Vec::new();
+        while let Some(row_result) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
+        {
+            let attendance = de::from_row::<TournamentAttendance>(&row_result)
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+            attendances.push(attendance);
+        }
+
+        Ok(attendances)
+    }
+
+    async fn update_tournament_position(
+        &self,
+        tournament_id: Uuid,
+        user_id: Uuid,
+        position: i32,
+    ) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        conn.execute(
+            "UPDATE tournament_attendance SET position = ?1 
+             WHERE id_tournament = ?2 AND id_user = ?3",
+            params![position, tournament_id.to_string(), user_id.to_string()],
+        )
+        .await
+        .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::future::Future;
+
+    use entities::{
+        category::Category,
+        tournament::{Tournament, TournamentAttendance, TournamentRegistration},
+        user::{URol, User},
+    };
+    use libsql::params;
+    use rstest::{fixture, rstest};
+    use use_cases::{
+        category_service::repository_trait::{CategoryRepository, UserCategoryRepository},
+        tournament_service::repository_trait::{
+            TournamentAttendanceRepository, TournamentRegistrationRepository, TournamentRepository,
+        },
+        user_service::repository_trait::UserRepository,
+    };
+    use uuid::{uuid, Uuid};
+
+    use crate::{TestDbBuilder, TursoDb};
+
+    #[fixture]
+    async fn repository() -> TursoDb {
+        let db = TestDbBuilder::create()
+            .await
+            .apply_doc_types()
+            .await
+            .apply_user_roles()
+            .await
+            .apply_levels()
+            .await
+            .build();
+
+        // Create a test user
+        let user = User {
+            id_user: Uuid::new_v4(),
+            email: "test@example.com".to_string(),
+            phone_number: "1234567890".to_string(),
+            identification_number: "ID123456".to_string(),
+            password: "password".to_string(),
+            country_code: "CO".to_string(),
+            identification_type: entities::user::IdType::CC,
+            user_rol: URol::ADMIN,
+            ..User::default()
+        };
+
+        db.create_user(&user)
+            .await
+            .expect("Failed to create test user");
+
+        let conn = db.get_connection().await.expect("Failed to get connection");
+
+        let category_id = uuid!("123e4567-e89b-12d3-a456-426614174000");
+
+        let category = Category {
+            name: "Test Category".into(),
+            id_category: category_id,
+            min_age: 10,
+            max_age: 20,
+        };
+
+        db.create_category(&category)
+            .await
+            .expect("Error creating category");
+
+        db.get_user_category(user.id_user, category_id)
+            .await
+            .expect("Error getting user category");
+
+        let tournament_id = uuid!("25ab815d-8f40-48ff-9f75-06b2da90e2fc");
+
+        let tournament = Tournament {
+            id_tournament: tournament_id,
+            name: "Tournament test".to_string(),
+            id_category: uuid!("123e4567-e89b-12d3-a456-426614174000"),
+            start_datetime: chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
+            end_datetime: chrono::DateTime::from_timestamp(86400, 0)
+                .unwrap()
+                .naive_utc(),
+        };
+
+        db.create_tournament(&tournament)
+            .await
+            .expect("Error creating tournament");
+
+        let user_id = uuid!("516e4310-720a-4d41-afa6-772426dc91ba");
+
+        let user = User {
+            id_user: user_id,
+            email: "test_final@example.com".to_string(),
+            phone_number: "123456789099".to_string(),
+            identification_number: "ID123456h".to_string(),
+            password: "passwordo".to_string(),
+            country_code: "CO".to_string(),
+            identification_type: entities::user::IdType::CC,
+            user_rol: URol::ADMIN,
+            ..User::default()
+        };
+
+        db.create_user(&user)
+            .await
+            .expect("Failed to create test user");
+
+        db
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_create_tournament(repository: impl Future<Output = TursoDb>) {
+        let tournament_id = uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8");
+        let category_id = uuid!("123e4567-e89b-12d3-a456-426614174000");
+        let db = repository.await;
+
+        let tournament = Tournament {
+            id_tournament: tournament_id,
+            name: "Test Tournament".to_string(),
+            id_category: category_id,
+            start_datetime: chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
+            end_datetime: chrono::DateTime::from_timestamp(86400, 0)
+                .unwrap()
+                .naive_utc(),
+        };
+
+        db.create_tournament(&tournament)
+            .await
+            .expect("Error creating tournament");
+
+        let tournament_db = db
+            .get_tournament_by_id(tournament_id)
+            .await
+            .expect("Error getting tournament by id")
+            .expect("Tournament was not added");
+
+        assert_eq!(tournament, tournament_db);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_tournament_by_id(repository: impl Future<Output = TursoDb>) {
+        let tournament_id = Uuid::new_v4();
+        let category_id = uuid!("123e4567-e89b-12d3-a456-426614174000");
+        let db = repository.await;
+
+        let tournament = Tournament {
+            id_tournament: tournament_id,
+            name: "Test Tournament".to_string(),
+            id_category: category_id,
+            start_datetime: chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
+            end_datetime: chrono::DateTime::from_timestamp(86400, 0)
+                .unwrap()
+                .naive_utc(),
+        };
+
+        db.create_tournament(&tournament)
+            .await
+            .expect("Error creating tournament");
+
+        let tournament_db = db
+            .get_tournament_by_id(tournament_id)
+            .await
+            .expect("Error getting tournament by id")
+            .expect("Tournament was not added");
+
+        assert_eq!(tournament, tournament_db);
+
+        let tournament_db = db
+            .get_tournament_by_id(Uuid::new_v4())
+            .await
+            .expect("Error getting tournament by id");
+
+        assert!(tournament_db.is_none());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_update_tournament(repository: impl Future<Output = TursoDb>) {
+        let tournament_id = Uuid::new_v4();
+        let category_id = uuid!("123e4567-e89b-12d3-a456-426614174000");
+        let db = repository.await;
+
+        let mut tournament = Tournament {
+            id_tournament: tournament_id,
+            name: "Original Name".to_string(),
+            id_category: category_id,
+            start_datetime: chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
+            end_datetime: chrono::DateTime::from_timestamp(86400, 0)
+                .unwrap()
+                .naive_utc(),
+        };
+
+        db.create_tournament(&tournament)
+            .await
+            .expect("Error creating tournament");
+
+        // Update some fields
+        tournament.name = "Updated Name".to_string();
+        tournament.end_datetime = chrono::DateTime::from_timestamp(172800, 0)
+            .unwrap()
+            .naive_utc();
+
+        db.update_tournament(&tournament)
+            .await
+            .expect("Error updating tournament");
+
+        let updated_tournament = db
+            .get_tournament_by_id(tournament_id)
+            .await
+            .expect("Error fetching updated tournament")
+            .expect("Tournament not found after update");
+
+        assert_eq!(tournament, updated_tournament);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_delete_tournament(repository: impl Future<Output = TursoDb>) {
+        let tournament_id = Uuid::new_v4();
+        let category_id = uuid!("123e4567-e89b-12d3-a456-426614174000");
+        let db = repository.await;
+
+        let tournament = Tournament {
+            id_tournament: tournament_id,
+            name: "Test Tournament".to_string(),
+            id_category: category_id,
+            start_datetime: chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
+            end_datetime: chrono::DateTime::from_timestamp(86400, 0)
+                .unwrap()
+                .naive_utc(),
+        };
+
+        db.create_tournament(&tournament)
+            .await
+            .expect("Error creating tournament");
+
+        db.delete_tournament(tournament_id)
+            .await
+            .expect("Error deleting tournament");
+
+        let deleted_tournament = db
+            .get_tournament_by_id(tournament_id)
+            .await
+            .expect("Error fetching tournament after delete");
+
+        assert!(deleted_tournament.is_none());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_list_tournaments(repository: impl Future<Output = TursoDb>) {
+        let db = repository.await;
+
+        // Get initial list of tournaments
+        let initial_tournaments = db
+            .list_tournaments()
+            .await
+            .expect("Error listing initial tournaments");
+        let initial_count = initial_tournaments.len();
+
+        // Create two tournaments
+        let tournament1 = Tournament {
+            id_tournament: Uuid::new_v4(),
+            name: "Tournament 1".to_string(),
+            id_category: uuid!("123e4567-e89b-12d3-a456-426614174000"),
+            start_datetime: chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
+            end_datetime: chrono::DateTime::from_timestamp(86400, 0)
+                .unwrap()
+                .naive_utc(),
+        };
+
+        let tournament2 = Tournament {
+            id_tournament: Uuid::new_v4(),
+            name: "Tournament 2".to_string(),
+            id_category: uuid!("123e4567-e89b-12d3-a456-426614174000"),
+            start_datetime: chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
+            end_datetime: chrono::DateTime::from_timestamp(86400, 0)
+                .unwrap()
+                .naive_utc(),
+        };
+
+        db.create_tournament(&tournament1)
+            .await
+            .expect("Error creating tournament1");
+        db.create_tournament(&tournament2)
+            .await
+            .expect("Error creating tournament2");
+
+        let tournaments_after_insert = db
+            .list_tournaments()
+            .await
+            .expect("Error listing tournaments after insert");
+        assert_eq!(tournaments_after_insert.len(), initial_count + 2);
+
+        // Delete one tournament
+        db.delete_tournament(tournament1.id_tournament)
+            .await
+            .expect("Error deleting tournament1");
+
+        let tournaments_after_delete = db
+            .list_tournaments()
+            .await
+            .expect("Error listing tournaments after deletion");
+        assert_eq!(tournaments_after_delete.len(), initial_count + 1);
+
+        // Ensure that tournament1 is no longer listed
+        for tournament in tournaments_after_delete {
+            assert_ne!(tournament.id_tournament, tournament1.id_tournament);
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_register_user_for_tournament(repository: impl Future<Output = TursoDb>) {
+        let db = repository.await;
+
+        let tournament_id = uuid!("25ab815d-8f40-48ff-9f75-06b2da90e2fc");
+
+        // Get the test user ID
+        let user_id = db
+            .get_user_id_by_email("test@example.com")
+            .await
+            .expect("Failed to get test user")
+            .expect("Test user not found");
+
+        let registration = TournamentRegistration {
+            id_tournament: tournament_id,
+            id_user: user_id,
+            registration_datetime: chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
+        };
+
+        db.register_user_for_tournament(&registration)
+            .await
+            .expect("Error registering user for tournament");
+
+        let registrations = db
+            .get_tournament_registrations(tournament_id)
+            .await
+            .expect("Error getting tournament registrations");
+
+        assert_eq!(registrations.len(), 1);
+        assert_eq!(registrations[0], registration);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_record_tournament_attendance(repository: impl Future<Output = TursoDb>) {
+        let tournament_id = uuid!("25ab815d-8f40-48ff-9f75-06b2da90e2fc");
+        let db = repository.await;
+
+        // Get the test user ID
+        let user_id = db
+            .get_user_id_by_email("test@example.com")
+            .await
+            .expect("Failed to get test user")
+            .expect("Test user not found");
+
+        let attendance = TournamentAttendance {
+            id_tournament: tournament_id,
+            id_user: user_id,
+            attendance_datetime: chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
+            position: 1,
+        };
+
+        db.record_tournament_attendance(&attendance)
+            .await
+            .expect("Error recording tournament attendance");
+
+        let attendances = db
+            .get_tournament_attendance(tournament_id)
+            .await
+            .expect("Error getting tournament attendance");
+
+        assert_eq!(attendances.len(), 1);
+        assert_eq!(attendances[0], attendance);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_update_tournament_position(repository: impl Future<Output = TursoDb>) {
+        let tournament_id = uuid!("25ab815d-8f40-48ff-9f75-06b2da90e2fc");
+        let user_id = uuid!("516e4310-720a-4d41-afa6-772426dc91ba");
+        let db = repository.await;
+
+        let attendance = TournamentAttendance {
+            id_tournament: tournament_id,
+            id_user: user_id,
+            attendance_datetime: chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
+            position: 1,
+        };
+
+        db.record_tournament_attendance(&attendance)
+            .await
+            .expect("Error recording tournament attendance");
+
+        db.update_tournament_position(tournament_id, user_id, 2)
+            .await
+            .expect("Error updating tournament position");
+
+        let attendances = db
+            .get_tournament_attendance(tournament_id)
+            .await
+            .expect("Error getting tournament attendance");
+
+        assert_eq!(attendances.len(), 1);
+        assert_eq!(attendances[0].position, 2);
+    }
+}
+--- turso_db/src/training_repo/mod.rs ---
+use async_trait::async_trait;
+use entities::training::{Training, TrainingRegistration};
+use libsql::params;
+use use_cases::training_service::{
+    err::{Error, Result},
+    repository_trait::{TrainingRegistrationRepository, TrainingRepository},
+};
+use uuid::Uuid;
+
+use crate::TursoDb;
+
+#[async_trait]
+impl TrainingRepository for TursoDb {
+    async fn create_training(&self, training: &Training) -> Result<()> {
+        self.execute_with_error("INSERT INTO 
+training (id_training, name, start_datetime, end_datetime, minimum_payment, id_category) 
+VALUES (id_training = 1?, name = 2?, start_datetime = 3?, end_datetime = 4?, minimum_payment = 5?, id_category = 6?)",
+            params![
+                training.id_training.to_string(),
+                *training.name,
+                training
+                    .start_datetime
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+                training
+                    .end_datetime
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+                training.minimum_payment,
+                training.id_category.to_string()
+            ],
+ Error::UnknownDatabaseError).await
+    }
+
+    async fn get_training_by_id(&self, id: Uuid) -> Result<Option<Training>> {
+        self.query_one_with_error(
+            "SELECT id_training, name, start_datetime, end_datetime, minimum_payment, id_category
+FROM training WHERE id_training = 1?",
+            params![id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
+    async fn update_training(&self, training: &Training) -> Result<()> {
+        self.execute_with_error(
+            "UPDATE training SET name = 2?, start_datetime = 3?, end_datetime = 4?,
+minimum_payment = 5? = 6?, id_category = 7? WHERE id_training = 1?",
+            params![
+                training.id_training.to_string(),
+                *training.name,
+                training
+                    .start_datetime
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+                training
+                    .end_datetime
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+                training.minimum_payment,
+                training.id_category.to_string()
+            ],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
+    async fn delete_training(&self, id: Uuid) -> Result<()> {
+        self.execute_with_error(
+            "UPDATE training SET deleted = 1 WHERE id_training = 1?",
+            params![id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
+    async fn list_trainings(&self) -> Result<Vec<Training>> {
+        self.query_many_with_error("SELECT id_training, name, start_datetime, end_datetime, minimum_payment, id_category FROM
+training", params![], Error::UnknownDatabaseError).await
+    }
+}
+
+#[async_trait]
+impl TrainingRegistrationRepository for TursoDb {
+    async fn register_user_for_training(&self, registration: &TrainingRegistration) -> Result<()> {
+        self.execute_with_error("INSERT INTO training_registration (id_user, registration_datetime, attended, attendance_time, id_training)
+VALUES (id_user = 1?, registration_datetime = 2?, attended = 3?, attendance_time = 4?, id_training = 5? = 6?)", params![
+    registration.id_user.to_string(),
+    registration.registration_datetime
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+    registration.attended,
+    registration.attendance_datetime
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+    registration.id_training.to_string(),
+], Error::UnknownDatabaseError).await
+    }
+
+    async fn get_training_registrations(
+        &self,
+        training_id: Uuid,
+    ) -> Result<Vec<TrainingRegistration>> {
+        self.query_many_with_error(
+            "SELECT id_user, registration_datetime, attended, attendance_time, id_training
+FROM training_registration WHERE id_training = 1?",
+            params![training_id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
+    async fn mark_training_attendance(
+        &self,
+        training_id: Uuid,
+        user_id: Uuid,
+        attended: bool,
+    ) -> Result<()> {
+        self.execute_with_error(
+            "UPDATE training_registration SET attended = 1? WHERE training_id: 2?, user_id: 3?",
+            params![attended, training_id.to_string(), user_id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+}
+--- turso_db/src/tuition_repo/mod.rs ---
+--- turso_db/src/user_repo/mod.rs ---
+use async_trait::async_trait;
+use entities::user::{IdType, User};
+use libsql::{de, params};
+use use_cases::user_service::err::{Error, Result};
+use use_cases::user_service::repository_trait::UserRepository;
+use uuid::Uuid;
+
+use crate::TursoDb;
+
+#[async_trait]
+impl UserRepository for TursoDb {
+    async fn create_user(&self, user: &User) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        conn.execute(
+            "INSERT INTO person (
+                id_user, first_name, last_name, birth_date, registration_date, 
+                email, email_verified, phone_number, country_code, password, 
+                identification_number, identification_type, user_rol
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![
+                user.id_user.to_string(),
+                user.first_name.to_string(),
+                user.last_name.to_string(),
+                user.birth_date.format("%Y-%m-%d").to_string(),
+                user.registration_date
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+                user.email.to_string(),
+                user.email_verified as i32,
+                user.phone_number.to_string(),
+                user.country_code.to_string(),
+                user.password.to_string(),
+                user.identification_number.to_string(),
+                user.identification_type.to_string(),
+                user.user_rol.to_string(),
+            ],
+        )
+        .await
+        .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        Ok(())
+    }
+
+    async fn get_user_by_id(&self, id: Uuid) -> Result<Option<User>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("connection error: {err}")))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT id_user, first_name, last_name, birth_date, registration_date, email,
+email_verified, phone_number, country_code, password, identification_number, identification_type, user_rol FROM person WHERE id_user = ?1 AND deleted = 0",
+                params![id.to_string()],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        if let Some(row_result) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
+        {
+            let row = row_result;
+            let user = de::from_row::<User>(&row)
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+            Ok(Some(user))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn get_user_id_by_email(&self, email: &str) -> Result<Option<Uuid>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT id_user FROM person 
+                 WHERE email = ?1 AND deleted = 0",
+                params![email],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        if let Some(row_result) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
+        {
+            let id_str: String = row_result
+                .get(0)
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+            let uuid = Uuid::parse_str(&id_str)
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+            Ok(Some(uuid))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn get_user_id_by_phone(&self, phone_number: &str) -> Result<Option<Uuid>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT id_user FROM person 
+                 WHERE phone_number = ?1 AND deleted = 0",
+                params![phone_number],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        if let Some(row_result) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
+        {
+            let id_str: String = row_result
+                .get(0)
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+            let uuid = Uuid::parse_str(&id_str)
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+            Ok(Some(uuid))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn get_user_id_by_identification(
+        &self,
+        identification_number: &str,
+        identification_type: &IdType,
+    ) -> Result<Option<Uuid>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT id_user FROM person 
+                 WHERE identification_number = ?1 
+AND identification_type = ?2 
+AND deleted = 0",
+                params![identification_number, identification_type.to_string()],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        if let Some(row_result) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
+        {
+            let id_str: String = row_result
+                .get(0)
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+            let uuid = Uuid::parse_str(&id_str)
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+            Ok(Some(uuid))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn update_user(&self, user: &User) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        conn.execute(
+            "UPDATE person SET 
+first_name = ?1, 
+last_name = ?2, 
+birth_date = ?3, 
+registration_date = ?4, 
+email = ?5, 
+email_verified = ?6, 
+phone_number = ?7, 
+country_code = ?8, 
+password = ?9, 
+identification_number = ?10, 
+identification_type = ?11, 
+user_rol = ?12,
+deleted = ?13
+WHERE id_user = ?14",
+            params![
+                user.first_name.to_string(),
+                user.last_name.to_string(),
+                user.birth_date.format("%Y-%m-%d").to_string(),
+                user.registration_date
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+                user.email.to_string(),
+                user.email_verified as i32,
+                user.phone_number.to_string(),
+                user.country_code.to_string(),
+                user.password.to_string(),
+                user.identification_number.to_string(),
+                user.identification_type.to_string(),
+                user.user_rol.to_string(),
+                user.id_user.to_string(),
+            ],
+        )
+        .await
+        .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        Ok(())
+    }
+
+    async fn delete_user(&self, id: Uuid) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        conn.execute(
+            "UPDATE person SET deleted = 1 WHERE id_user = ?1",
+            params![id.to_string()],
+        )
+        .await
+        .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        Ok(())
+    }
+
+    async fn list_users(&self) -> Result<Vec<User>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT id_user, first_name, last_name, birth_date, registration_date, email,
+email_verified, phone_number, country_code, password, identification_number,
+identification_type, user_rol 
+FROM person 
+WHERE deleted = 0",
+                params![],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+
+        let mut users = Vec::new();
+        while let Some(row_result) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
+        {
+            let user = de::from_row::<User>(&row_result)
+                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+            users.push(user);
+        }
+
+        Ok(users)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::{future::Future, process::Output};
+
+    use entities::user::{IdType, User};
+    use rstest::{fixture, rstest};
+    use use_cases::user_service::repository_trait::UserRepository;
+    use uuid::Uuid;
+
+    use crate::{TestDbBuilder, TursoDb};
+
+    #[fixture]
+    async fn repository() -> TursoDb {
+        let db = TestDbBuilder::create()
+            .await
+            .apply_doc_types()
+            .await
+            .apply_user_roles()
+            .await
+            .build();
+
+        db
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_create_user(repository: impl Future<Output = TursoDb>) {
+        let user_id = Uuid::new_v4();
+
+        let db = repository.await;
+
+        let user = User {
+            id_user: user_id,
+            email: "estebanmff@gmail.com".to_string(),
+            ..User::default()
+        };
+
+        db.create_user(&user).await.expect("Error creating user");
+
+        let user_db = db
+            .get_user_by_id(user_id)
+            .await
+            .expect("Error getting user by id")
+            .expect("User was not added");
+
+        assert_eq!(user, user_db)
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_user_by_id(repository: impl Future<Output = TursoDb>) {
+        let user_id = Uuid::new_v4();
+
+        let db = repository.await;
+
+        let user = User {
+            id_user: user_id,
+            email: "estebanmff@gmail.com".to_string(),
+            ..User::default()
+        };
+
+        db.create_user(&user).await.expect("Error creating user");
+
+        let user_db = db
+            .get_user_by_id(user_id)
+            .await
+            .expect("Error getting user by id")
+            .expect("User was not added");
+
+        assert_eq!(user, user_db);
+
+        let user_db = db
+            .get_user_by_id(Uuid::new_v4())
+            .await
+            .expect("Error getting user by id");
+
+        assert!(user_db.is_none());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_user_id_by_email(repository: impl Future<Output = TursoDb>) {
+        let user_id = Uuid::new_v4();
+        let email = "test_email@example.com".to_string();
+        let db = repository.await;
+
+        let user = User {
+            id_user: user_id,
+            email: email.clone(),
+            phone_number: "1234567890".to_string(),
+            identification_number: "ID_EMAIL_1".to_string(),
+            ..User::default()
+        };
+
+        db.create_user(&user).await.expect("Error creating user");
+
+        let fetched_id = db
+            .get_user_id_by_email(&email)
+            .await
+            .expect("Error fetching user id by email");
+        assert_eq!(fetched_id, Some(user_id));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_user_id_by_phone(repository: impl Future<Output = TursoDb>) {
+        let user_id = Uuid::new_v4();
+        let phone_number = "555-1234".to_string();
+        let db = repository.await;
+
+        let user = User {
+            id_user: user_id,
+            email: "test_phone@example.com".to_string(),
+            phone_number: phone_number.clone(),
+            identification_number: "ID_PHONE_1".to_string(),
+            ..User::default()
+        };
+
+        db.create_user(&user).await.expect("Error creating user");
+
+        let fetched_id = db
+            .get_user_id_by_phone(&phone_number)
+            .await
+            .expect("Error fetching user id by phone");
+        assert_eq!(fetched_id, Some(user_id));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_user_id_by_identification(repository: impl Future<Output = TursoDb>) {
+        let user_id = Uuid::new_v4();
+        let identification_number = "ID-IDENT-1234".to_string();
+        let identification_type = IdType::default(); // default is CC, for example
+        let db = repository.await;
+
+        let user = User {
+            id_user: user_id,
+            email: "test_ident@example.com".to_string(),
+            identification_number: identification_number.clone(),
+            identification_type,
+            phone_number: "9876543210".to_string(),
+            ..User::default()
+        };
+
+        db.create_user(&user).await.expect("Error creating user");
+
+        let fetched_id = db
+            .get_user_id_by_identification(&identification_number, &IdType::default())
+            .await
+            .expect("Error fetching user id by identification");
+        assert_eq!(fetched_id, Some(user_id));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_update_user(repository: impl Future<Output = TursoDb>) {
+        let user_id = Uuid::new_v4();
+        let db = repository.await;
+
+        let mut user = User {
+            id_user: user_id,
+            email: "original@example.com".to_string(),
+            first_name: "Original".to_string(),
+            phone_number: "0001112222".to_string(),
+            identification_number: "ID_UPDATE_1".to_string(),
+            ..User::default()
+        };
+
+        db.create_user(&user).await.expect("Error creating user");
+
+        // Update some fields.
+        user.first_name = "Updated".to_string();
+        user.email = "updated@example.com".to_string();
+
+        db.update_user(&user).await.expect("Error updating user");
+
+        let updated_user = db
+            .get_user_by_id(user_id)
+            .await
+            .expect("Error fetching updated user")
+            .expect("User not found after update");
+
+        assert_ne!(user, updated_user);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_delete_user(repository: impl Future<Output = TursoDb>) {
+        let user_id = Uuid::new_v4();
+        let db = repository.await;
+
+        let user = User {
+            id_user: user_id,
+            email: "delete_me@example.com".to_string(),
+            ..User::default()
+        };
+
+        db.create_user(&user).await.expect("Error creating user");
+
+        db.delete_user(user_id).await.expect("Error deleting user");
+
+        let deleted_user = db
+            .get_user_by_id(user_id)
+            .await
+            .expect("Error fetching user after delete");
+        assert!(deleted_user.is_none());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_list_users(repository: impl Future<Output = TursoDb>) {
+        let db = repository.await;
+
+        // Get the initial list of users.
+        let initial_users = db.list_users().await.expect("Error listing initial users");
+        let initial_count = initial_users.len();
+
+        // Create two users.
+        let user1 = User {
+            id_user: Uuid::new_v4(),
+            email: "list1@example.com".to_string(),
+            phone_number: "111111".to_string(),
+            identification_number: "ID_LIST_1".to_string(),
+            ..User::default()
+        };
+        let user2 = User {
+            id_user: Uuid::new_v4(),
+            email: "list2@example.com".to_string(),
+            phone_number: "222222".to_string(),
+            identification_number: "ID_LIST_2".to_string(),
+            ..User::default()
+        };
+
+        db.create_user(&user1).await.expect("Error creating user1");
+        db.create_user(&user2).await.expect("Error creating user2");
+
+        let users_after_insert = db
+            .list_users()
+            .await
+            .expect("Error listing users after insert");
+        assert_eq!(users_after_insert.len(), initial_count + 2);
+
+        // Delete one user.
+        db.delete_user(user1.id_user)
+            .await
+            .expect("Error deleting user1");
+
+        let users_after_delete = db
+            .list_users()
+            .await
+            .expect("Error listing users after deletion");
+        assert_eq!(users_after_delete.len(), initial_count + 1);
+
+        // Ensure that user1 is no longer listed.
+        for user in users_after_delete {
+            assert_ne!(user.id_user, user1.id_user);
+        }
+    }
+}
+--- use_cases/src/category_service/err.rs ---
+use thiserror::Error;
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Database error: {0}")]
+    UnknownDatabaseError(String),
+
+    #[error("Category not found")]
+    CategoryNotFound,
+
+    #[error("Category already exists")]
+    CategoryAlreadyExists,
+
+    #[error("Invalid age range: min_age must be less than max_age")]
+    InvalidAgeRange,
+
+    #[error("Category name is required")]
+    MissingName,
+
+    #[error("Category requirement not found")]
+    RequirementNotFound,
+
+    #[error("User already has this category")]
+    UserAlreadyHasCategory,
+
+    #[error("User does not meet category requirements")]
+    UserDoesNotMeetRequirements,
+
+    #[error("Level not found")]
+    LevelNotFound,
+}
+--- use_cases/src/category_service/mod.rs ---
+use entities::{
+    category::{Category, CategoryRequirement},
+    user::UserCategory,
+};
+use err::{Error, Result};
+use repository_trait::{CategoryRepository, CategoryRequirementRepository, UserCategoryRepository};
+use std::sync::Arc;
+use uuid::Uuid;
+
+pub mod err;
+pub mod repository_trait;
+
+#[derive(Clone)]
+pub struct CategoryService {
+    category_repo: Arc<dyn CategoryRepository>,
+    requirement_repo: Arc<dyn CategoryRequirementRepository>,
+    user_category_repo: Arc<dyn UserCategoryRepository>,
+}
+
+impl CategoryService {
+    pub fn new(
+        category_repo: Arc<dyn CategoryRepository>,
+        requirement_repo: Arc<dyn CategoryRequirementRepository>,
+        user_category_repo: Arc<dyn UserCategoryRepository>,
+    ) -> Self {
+        Self {
+            category_repo,
+            requirement_repo,
+            user_category_repo,
+        }
+    }
+
+    //  delete_category
+    pub async fn delete_category(&self, id: Uuid) -> Result<()> {
+        self.category_repo.delete_category(id).await?;
+        Ok(())
+    }
+
+    pub async fn update_category(&self, category: &Category) -> Result<()> {
+        // Validate category exists
+        if self
+            .category_repo
+            .get_category_by_id(category.id_category)
+            .await?
+            .is_none()
+        {
+            return Err(Error::CategoryNotFound);
+        }
+
+        // Validate category name
+        if category.name.trim().is_empty() {
+            return Err(Error::MissingName);
+        }
+
+        // Validate age range
+        if category.min_age >= category.max_age {
+            return Err(Error::InvalidAgeRange);
+        }
+
+        self.category_repo.update_category(category).await?;
+        Ok(())
+    }
+
+    pub async fn get_category_by_id(&self, id: Uuid) -> Result<Category> {
+        self.category_repo
+            .get_category_by_id(id)
+            .await?
+            .ok_or(Error::CategoryNotFound)
+    }
+
+    pub async fn get_all_categories(&self) -> Result<Vec<Category>> {
+        self.category_repo.list_categories().await
+    }
+
+    pub async fn add_category(&self, category: Category) -> Result<()> {
+        if self
+            .category_repo
+            .get_category_by_name(&category.name)
+            .await?
+            .is_some()
+        {
+            return Err(Error::CategoryAlreadyExists);
+        }
+
+        self.category_repo.create_category(&category).await?;
+
+        Ok(())
+    }
+
+    pub async fn add_category_requirement(&self, category_req: &CategoryRequirement) -> Result<()> {
+        self.requirement_repo
+            .create_category_requirement(category_req)
+            .await
+    }
+
+    pub async fn get_category_requirements(
+        &self,
+        category_id: Uuid,
+    ) -> Result<Vec<CategoryRequirement>> {
+        self.requirement_repo
+            .get_category_requirements(category_id)
+            .await
+    }
+
+    pub async fn get_user_category(
+        &self,
+        user_id: Uuid,
+        category_id: Uuid,
+    ) -> Result<Option<UserCategory>> {
+        self.user_category_repo
+            .get_user_category(user_id, category_id)
+            .await
+    }
+
+    // get user categories it is elegible to
+    //pub async fn get_elegible_categories(
+    //    &self,
+    //    category_id: Uuid,
+    //    user_id: _,
+    //) -> Result<Vec<Category>> {
+    //    todo!()
+    //}
+}
+--- use_cases/src/category_service/repository_trait.rs ---
+use super::err::Result;
+use async_trait::async_trait;
+use entities::{
+    category::{Category, CategoryRequirement, Level},
+    user::UserCategory,
+};
+use uuid::Uuid;
+
+/// Trait defining category-related operations
+#[async_trait]
+pub trait CategoryRepository: Send + Sync {
+    async fn create_category(&self, category: &Category) -> Result<()>;
+    async fn get_category_by_id(&self, id: Uuid) -> Result<Option<Category>>;
+    async fn update_category(&self, category: &Category) -> Result<()>;
+    async fn delete_category(&self, id: Uuid) -> Result<()>; // Soft delete
+    async fn list_categories(&self) -> Result<Vec<Category>>;
+    async fn get_category_by_name(&self, name: &str) -> Result<Option<Category>>;
+}
+
+/// Trait defining level-related operations
+pub trait LevelRepository: Send + Sync {
+    fn create_level(&self, level: &Level) -> Result<()>;
+    fn get_level_by_id(&self, id: Uuid) -> Result<Option<Level>>;
+    fn list_levels(&self) -> Result<Vec<Level>>;
+}
+
+/// Trait defining category requirements
+#[async_trait]
+pub trait CategoryRequirementRepository: Send + Sync {
+    async fn create_category_requirement(&self, requirement: &CategoryRequirement) -> Result<()>;
+    async fn get_category_requirements(
+        &self,
+        category_id: Uuid,
+    ) -> Result<Vec<CategoryRequirement>>;
+}
+
+#[async_trait]
+pub trait UserCategoryRepository: Send + Sync {
+    async fn get_user_category(
+        &self,
+        id_user: Uuid,
+        id_category: Uuid,
+    ) -> Result<Option<UserCategory>>;
+}
+--- use_cases/src/lib.rs ---
+pub mod category_service;
+pub mod tournament_service;
+pub mod training_service;
+pub mod tuition_service;
+pub mod user_service;
+--- use_cases/src/tournament_service/err.rs ---
+use thiserror::Error;
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Database error: {0}")]
+    UnknownDatabaseError(String),
+    #[error("Tournament not found")]
+    TournamentNotFound,
+    #[error("User not registered for tournament")]
+    UserNotRegistered,
+    #[error("User already registered")]
+    UserAlreadyRegistered,
+    #[error("Invalid tournament dates")]
+    InvalidDates,
+    #[error("Invalid category")]
+    InvalidCategory,
+    #[error("Invalid position, the position must be positive")]
+    NegativePosition,
+    #[error("Invalid position, already taken")]
+    PositionAlreadyTaken,
+    #[error("User did not attend tournament")]
+    UserDidNotAttend,
+}
+--- use_cases/src/tournament_service/mod.rs ---
+pub mod err;
+pub mod repository_trait;
+
+use self::err::{Error, Result};
+use entities::tournament::{
+    Tournament, TournamentAttendance, TournamentCreation, TournamentRegistration,
+};
+use repository_trait::{
+    TournamentAttendanceRepository, TournamentRegistrationRepository, TournamentRepository,
+};
+use std::sync::Arc;
+use uuid::Uuid;
+
+#[derive(Clone)]
+pub struct TournamentService {
+    tournament_repo: Arc<dyn TournamentRepository + Send + Sync>,
+    registration_repo: Arc<dyn TournamentRegistrationRepository + Send + Sync>,
+    attendance_repo: Arc<dyn TournamentAttendanceRepository + Send + Sync>,
+}
+
+impl TournamentService {
+    pub fn new(
+        tournament_repo: Arc<dyn TournamentRepository + Send + Sync>,
+        registration_repo: Arc<dyn TournamentRegistrationRepository + Send + Sync>,
+        attendance_repo: Arc<dyn TournamentAttendanceRepository + Send + Sync>,
+    ) -> Self {
+        Self {
+            tournament_repo,
+            registration_repo,
+            attendance_repo,
+        }
+    }
+
+    pub async fn create_tournament(&self, tournament: TournamentCreation) -> Result<()> {
+        if tournament.start_datetime >= tournament.end_datetime {
+            return Err(Error::InvalidDates);
+        }
+
+        self.tournament_repo
+            .create_tournament(&tournament.to_tournament(Uuid::new_v4()))
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_tournament(&self, id: Uuid) -> Result<Tournament> {
+        self.tournament_repo
+            .get_tournament_by_id(id)
+            .await?
+            .ok_or(Error::TournamentNotFound)
+            .map(|t| t.into())
+    }
+
+    pub async fn update_tournament(&self, tournament: Tournament) -> Result<()> {
+        // Validate dates
+        if tournament.start_datetime >= tournament.end_datetime {
+            return Err(Error::InvalidDates);
+        }
+
+        // Check if tournament exists
+        if self
+            .tournament_repo
+            .get_tournament_by_id(tournament.id_tournament)
+            .await?
+            .is_none()
+        {
+            return Err(Error::TournamentNotFound);
+        }
+
+        self.tournament_repo
+            .update_tournament(&Tournament {
+                id_tournament: tournament.id_tournament,
+                name: tournament.name,
+                id_category: tournament.id_category,
+                start_datetime: tournament.start_datetime,
+                end_datetime: tournament.end_datetime,
+            })
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn delete_tournament(&self, id: Uuid) -> Result<()> {
+        // Check if tournament exists
+        if self
+            .tournament_repo
+            .get_tournament_by_id(id)
+            .await?
+            .is_none()
+        {
+            return Err(Error::TournamentNotFound);
+        }
+
+        self.tournament_repo.delete_tournament(id).await?;
+
+        Ok(())
+    }
+
+    pub async fn list_tournaments(&self) -> Result<Vec<Tournament>> {
+        let tournaments = self.tournament_repo.list_tournaments().await?;
+
+        Ok(tournaments.into_iter().map(|t| t.into()).collect())
+    }
+
+    pub async fn register_user(&self, registration: TournamentRegistration) -> Result<()> {
+        // Check if tournament exists
+        if self
+            .tournament_repo
+            .get_tournament_by_id(registration.id_tournament)
+            .await?
+            .is_none()
+        {
+            return Err(Error::TournamentNotFound);
+        }
+
+        // Check if user is already registered
+        let registrations = self
+            .registration_repo
+            .get_tournament_registrations(registration.id_tournament)
+            .await?;
+        if registrations
+            .iter()
+            .any(|r| r.id_user == registration.id_user)
+        {
+            return Err(Error::UserAlreadyRegistered);
+        }
+
+        self.registration_repo
+            .register_user_for_tournament(&TournamentRegistration {
+                id_tournament: registration.id_tournament,
+                id_user: registration.id_user,
+                registration_datetime: registration.registration_datetime,
+            })
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn record_attendance(&self, attendance: TournamentAttendance) -> Result<()> {
+        // Check if tournament exists
+        if self
+            .tournament_repo
+            .get_tournament_by_id(attendance.id_tournament)
+            .await?
+            .is_none()
+        {
+            return Err(Error::TournamentNotFound);
+        }
+
+        // Check if user is registered
+        let registrations = self
+            .registration_repo
+            .get_tournament_registrations(attendance.id_tournament)
+            .await?;
+        if !registrations
+            .iter()
+            .any(|r| r.id_user == attendance.id_user)
+        {
+            return Err(Error::UserNotRegistered);
+        }
+
+        self.attendance_repo
+            .record_tournament_attendance(&TournamentAttendance {
+                id_tournament: attendance.id_tournament,
+                id_user: attendance.id_user,
+                attendance_datetime: attendance.attendance_datetime,
+                position: attendance.position,
+            })
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn update_position(
+        &self,
+        tournament_id: Uuid,
+        user_id: Uuid,
+        position: i32,
+    ) -> Result<()> {
+        // Check if tournament exists
+        if self
+            .tournament_repo
+            .get_tournament_by_id(tournament_id)
+            .await?
+            .is_none()
+        {
+            return Err(Error::TournamentNotFound);
+        }
+
+        // Check if user attended
+        let attendance = self
+            .attendance_repo
+            .get_tournament_attendance(tournament_id)
+            .await?;
+        if !attendance.iter().any(|a| a.id_user == user_id) {
+            return Err(Error::UserDidNotAttend);
+        }
+
+        if attendance.iter().any(|a| a.position == position) {
+            return Err(Error::PositionAlreadyTaken);
+        }
+
+        // Validate position
+        if position < 1 {
+            return Err(Error::NegativePosition);
+        }
+
+        self.attendance_repo
+            .update_tournament_position(tournament_id, user_id, position)
+            .await?;
+
+        Ok(())
+    }
+}
+--- use_cases/src/tournament_service/repository_trait.rs ---
+use super::err::Result;
+use async_trait::async_trait;
+use entities::tournament::{Tournament, TournamentAttendance, TournamentRegistration};
+use uuid::Uuid;
+
+/// Trait defining tournament-related operations
+#[async_trait]
+pub trait TournamentRepository: Send + Sync {
+    async fn create_tournament(&self, tournament: &Tournament) -> Result<()>;
+    async fn get_tournament_by_id(&self, id: Uuid) -> Result<Option<Tournament>>;
+    async fn update_tournament(&self, tournament: &Tournament) -> Result<()>;
+    async fn delete_tournament(&self, id: Uuid) -> Result<()>; // Soft delete
+    async fn list_tournaments(&self) -> Result<Vec<Tournament>>;
+}
+
+#[async_trait]
+pub trait TournamentRegistrationRepository: Send + Sync {
+    async fn register_user_for_tournament(
+        &self,
+        registration: &TournamentRegistration,
+    ) -> Result<()>;
+    async fn get_tournament_registrations(
+        &self,
+        tournament_id: Uuid,
+    ) -> Result<Vec<TournamentRegistration>>;
+}
+
+#[async_trait]
+pub trait TournamentAttendanceRepository: Send + Sync {
+    async fn record_tournament_attendance(&self, attendance: &TournamentAttendance) -> Result<()>;
+    async fn get_tournament_attendance(
+        &self,
+        tournament_id: Uuid,
+    ) -> Result<Vec<TournamentAttendance>>;
+    async fn update_tournament_position(
+        &self,
+        tournament_id: Uuid,
+        user_id: Uuid,
+        position: i32,
+    ) -> Result<()>;
+}
+--- use_cases/src/training_service/err.rs ---
+use thiserror::Error;
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Unknow error in the database")]
+    UnknownDatabaseError(String),
+}
+--- use_cases/src/training_service/mod.rs ---
+pub mod err;
+pub mod repository_trait;
+--- use_cases/src/training_service/repository_trait.rs ---
+use super::err::Result;
+use async_trait::async_trait;
+use entities::training::{Training, TrainingRegistration};
+use uuid::Uuid;
+
+#[async_trait]
+pub trait TrainingRepository {
+    async fn create_training(&self, training: &Training) -> Result<()>;
+    async fn get_training_by_id(&self, id: Uuid) -> Result<Option<Training>>;
+    async fn update_training(&self, training: &Training) -> Result<()>;
+    async fn delete_training(&self, id: Uuid) -> Result<()>; // Soft delete
+    async fn list_trainings(&self) -> Result<Vec<Training>>;
+}
+
+#[async_trait]
+pub trait TrainingRegistrationRepository {
+    async fn register_user_for_training(&self, registration: &TrainingRegistration) -> Result<()>;
+
+    async fn get_training_registrations(
+        &self,
+        training_id: Uuid,
+    ) -> Result<Vec<TrainingRegistration>>;
+
+    async fn mark_training_attendance(
+        &self,
+        training_id: Uuid,
+        user_id: Uuid,
+        attended: bool,
+    ) -> Result<()>;
+}
+--- use_cases/src/tuition_service/err.rs ---
+use thiserror::Error;
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Unknow error in the database")]
+    UnknownDatabaseError(#[from] Box<dyn std::error::Error>),
+}
+--- use_cases/src/tuition_service/mod.rs ---
+pub mod err;
+pub mod repository_trait;
+--- use_cases/src/tuition_service/repository_trait.rs ---
+use super::err::Result;
+use entities::tuition::Tuition;
+use uuid::Uuid;
+
+pub trait TuitionRepository {
+    fn record_tuition_payment(&self, tuition: &Tuition) -> Result<()>;
+    fn get_tuition_by_id(&self, id: Uuid) -> Result<Option<Tuition>>;
+    fn list_tuition_payments_for_user(&self, user_id: Uuid) -> Result<Vec<Tuition>>;
+    fn list_all_tuition_payments(&self) -> Result<Vec<Tuition>>;
+}
+--- use_cases/src/user_service/err.rs ---
+use std::sync::Arc;
+
+use thiserror::Error;
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Unknow error in the database: {0}")]
+    UnknownDatabaseError(String),
+    #[error("User do not exists")]
+    UserIdDontExist,
+    #[error("Error hashing")]
+    ErrorHashing(String),
+    #[error("Error verifying hash")]
+    ErrorVerificationHash(String),
+    #[error("Error in password")]
+    InvalidPassword,
+    #[error("Email already exists")]
+    EmailAlreadyExists,
+    #[error("Phone number already exists")]
+    PhoneAlreadyExists,
+    #[error("Document already exists")]
+    DocumentAlreadyExists,
+    #[error("Invalid identifier")]
+    InvalidIdentifier,
+}
+--- use_cases/src/user_service/hasher_trait.rs ---
+use super::err::Result;
+
+pub trait PasswordHasher: Send + Sync {
+    fn hash(&self, content: &str) -> Result<String>;
+
+    fn verify(&self, original: &str, hashed: &str) -> Result<bool>;
+}
+--- use_cases/src/user_service/mod.rs ---
+use std::sync::Arc;
+
+use chrono::Utc;
+use entities::user::{URol, UserCreation, UserInfo, UserLogInInfo};
+use hasher_trait::PasswordHasher;
+use repository_trait::UserRepository;
+
+pub mod err;
+pub mod hasher_trait;
+pub mod repository_trait;
+mod unique_identifier;
+
+use err::{Error, Result};
+use unique_identifier::{EmailIdentifier, Identifier, PhoneIdentifier};
+use uuid::Uuid;
+
+#[derive(Clone)]
+pub struct UserService {
+    user_repo: Arc<dyn UserRepository>,
+    password_hasher: Arc<dyn PasswordHasher>,
+}
+
+#[derive(Clone, Debug)]
+pub struct LogInResponse {
+    pub user_id: Uuid,
+    pub user_rol: URol,
+}
+
+impl UserService {
+    pub fn new(
+        user_repo: Arc<dyn UserRepository>,
+        password_hasher: Arc<dyn PasswordHasher>,
+    ) -> Self {
+        Self {
+            user_repo,
+            password_hasher,
+        }
+    }
+
+    pub async fn register_user(&self, user_creation: UserCreation) -> Result<()> {
+        let email = user_creation.email.clone();
+        let phone = user_creation.phone_number.clone();
+        let identification_number = user_creation.identification_number.clone();
+        let identification_type = user_creation.identification_type.clone();
+
+        let mut user =
+            user_creation.to_user(Uuid::new_v4(), Utc::now().naive_utc(), false, URol::USER);
+
+        if self.user_repo.get_user_id_by_email(&email).await?.is_some() {
+            return Err(Error::EmailAlreadyExists);
+        } else if self.user_repo.get_user_id_by_phone(&phone).await?.is_some() {
+            return Err(Error::PhoneAlreadyExists);
+        } else if self
+            .user_repo
+            .get_user_id_by_identification(&identification_number, &identification_type)
+            .await?
+            .is_some()
+        {
+            return Err(Error::DocumentAlreadyExists);
+        }
+
+        user.password = self.password_hasher.hash(&user.password)?;
+
+        self.user_repo.create_user(&user).await?;
+
+        Ok(())
+    }
+
+    pub async fn get_all_users(&self) -> Result<Vec<UserInfo>> {
+        let users = self.user_repo.list_users().await?;
+
+        let users_info = users.into_iter().map(UserInfo::from).collect();
+
+        Ok(users_info)
+    }
+
+    pub async fn get_user_by_id(&self, user_id: Uuid) -> Result<UserInfo> {
+        let user = self.user_repo.get_user_by_id(user_id).await?;
+
+        match user {
+            Some(user) => Ok(UserInfo::from(user)),
+            None => Err(Error::UserIdDontExist),
+        }
+    }
+
+    pub async fn log_in_user(&self, user_log_in_info: &UserLogInInfo) -> Result<LogInResponse> {
+        let identifier = &user_log_in_info.identifier;
+
+        let email_identifier: Arc<dyn Identifier> =
+            Arc::new(EmailIdentifier::new(self.user_repo.clone(), None));
+
+        let phone_identifier: Arc<dyn Identifier> = Arc::new(PhoneIdentifier::new(
+            self.user_repo.clone(),
+            Some(email_identifier),
+        ));
+
+        let user_id = phone_identifier.identify(identifier).await?;
+
+        let user_info = match self.user_repo.get_user_by_id(user_id).await? {
+            Some(user_info) => user_info,
+            None => return Err(Error::UserIdDontExist),
+        };
+
+        let is_valid = self
+            .password_hasher
+            .verify(&user_log_in_info.password, &user_info.password)?;
+
+        if !is_valid {
+            return Err(Error::InvalidPassword);
+        }
+
+        Ok(LogInResponse {
+            user_id,
+            user_rol: URol::ADMIN,
+        })
+    }
+}
+--- use_cases/src/user_service/repository_trait.rs ---
+use super::err::Result;
+use async_trait::async_trait;
+use entities::user::*;
+use uuid::Uuid;
+
+#[async_trait]
+pub trait UserRepository: Sync + Send {
+    async fn create_user(&self, user: &User) -> Result<()>;
+    async fn get_user_by_id(&self, id: Uuid) -> Result<Option<User>>;
+
+    async fn get_user_id_by_email(&self, email: &str) -> Result<Option<Uuid>>;
+    async fn get_user_id_by_phone(&self, phone_number: &str) -> Result<Option<Uuid>>;
+    async fn get_user_id_by_identification(
+        &self,
+        identification_number: &str,
+        identification_type: &IdType,
+    ) -> Result<Option<Uuid>>;
+
+    async fn update_user(&self, user: &User) -> Result<()>;
+    async fn delete_user(&self, id: Uuid) -> Result<()>;
+    async fn list_users(&self) -> Result<Vec<User>>;
+}
+
+pub trait UserRoleRepository {
+    fn create_role(&self, role: &UserRole) -> Result<()>;
+    fn get_role_by_id(&self, id: Uuid) -> Result<Option<UserRole>>;
+    fn list_roles(&self) -> Result<Vec<UserRole>>;
+}
+
+pub trait IdentificationTypeRepository {
+    fn create_identification_type(&self, id_type: &IdType) -> Result<()>;
+    fn get_identification_type_by_id(&self, id: Uuid) -> Result<Option<IdType>>;
+    fn list_identification_types(&self) -> Result<Vec<IdType>>;
+}
+
+pub trait UserCategoryRepository {
+    fn assign_category_to_user(&self, user_category: &UserCategory) -> Result<()>;
+    fn get_user_categories(&self, user_id: Uuid) -> Result<Vec<UserCategory>>;
+}
+--- use_cases/src/user_service/unique_identifier.rs ---
+use std::sync::Arc;
+
+use super::err::Error;
+use super::{err::Result, repository_trait::UserRepository};
+use async_trait::async_trait;
+use uuid::Uuid;
+
+#[async_trait]
+pub trait Identifier: Sync + Send {
+    async fn identify(&self, identifier: &str) -> Result<Uuid>;
+
+    async fn next(&mut self, next: Arc<dyn Identifier>);
+}
+
+pub struct EmailIdentifier {
+    repo: Arc<dyn UserRepository>,
+    next: Option<Arc<dyn Identifier>>,
+}
+
+impl EmailIdentifier {
+    pub fn new(repo: Arc<dyn UserRepository>, next: Option<Arc<dyn Identifier>>) -> Self {
+        Self { repo, next }
+    }
+}
+
+#[async_trait]
+impl Identifier for EmailIdentifier {
+    async fn identify(&self, identifier: &str) -> Result<Uuid> {
+        if let Some(user_id) = self.repo.get_user_id_by_email(identifier).await? {
+            Ok(user_id)
+        } else {
+            if let Some(next) = self.next.clone() {
+                return next.identify(identifier).await;
+            }
+
+            Err(Error::InvalidIdentifier)
+        }
+    }
+
+    async fn next(&mut self, next: Arc<dyn Identifier>) {
+        self.next = Some(next);
+    }
+}
+
+pub struct PhoneIdentifier {
+    repo: Arc<dyn UserRepository>,
+    next: Option<Arc<dyn Identifier>>,
+}
+
+impl PhoneIdentifier {
+    pub fn new(repo: Arc<dyn UserRepository>, next: Option<Arc<dyn Identifier>>) -> Self {
+        Self { repo, next }
+    }
+}
+
+#[async_trait]
+impl Identifier for PhoneIdentifier {
+    async fn identify(&self, identifier: &str) -> Result<Uuid> {
+        if let Some(user_id) = self.repo.get_user_id_by_phone(identifier).await? {
+            Ok(user_id)
+        } else {
+            if let Some(next) = self.next.clone() {
+                return next.identify(identifier).await;
+            }
+
+            Err(Error::InvalidIdentifier)
+        }
+    }
+
+    async fn next(&mut self, next: Arc<dyn Identifier>) {
+        self.next = Some(next);
+    }
+}
