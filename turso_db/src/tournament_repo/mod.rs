@@ -5,7 +5,7 @@ use use_cases::tournament_service::err::{Error, Result};
 use use_cases::tournament_service::repository_trait::{
     TournamentAttendanceRepository, TournamentRegistrationRepository, TournamentRepository,
 };
-use uuid::{uuid, Uuid};
+use uuid::Uuid;
 
 use crate::TursoDb;
 

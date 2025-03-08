@@ -19,7 +19,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::{DateTime, NaiveDateTime};
     use serde::{Deserialize, Serialize};
     use serde_json;

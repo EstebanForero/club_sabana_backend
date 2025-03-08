@@ -3,6 +3,7 @@ use std::{error::Error, sync::Arc};
 use libsql::params;
 use libsql::{de, params::IntoParams, Connection, Rows};
 use serde::Deserialize;
+use uuid::Uuid;
 
 pub mod category_repo;
 mod migration;
@@ -124,6 +125,25 @@ impl TursoDb {
         }
 
         Ok(elements)
+    }
+
+    pub async fn create_test_user(&self, user_id: Uuid) -> Result<(), Box<dyn Error>> {
+        self.conn
+            .clone()
+            .unwrap()
+            .execute(
+                "INSERT INTO person (
+id_user, first_name, last_name, birth_date, registration_date,
+email, email_verified, phone_number, country_code, password,
+identification_number, identification_type, user_rol, deleted
+) VALUES (?1, 'Test', 'User', '2000-01-01', '2023-01-01 00:00:00',
+?2, 1, '123456789', 'CO', 'password',
+'123456789', 'CC', 'USER', 0)",
+                params![user_id.to_string(), format!("test{}@example.com", user_id)],
+            )
+            .await?;
+
+        Ok(())
     }
 
     pub async fn get_value_from_row<T, E>(

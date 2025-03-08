@@ -19,7 +19,7 @@ pub fn request_router(request_service: RequestService) -> Router {
         .route("/requests", post(create_request).get(list_requests))
         .route("/requests/{id}", get(get_request))
         .route("/requests/{id}/complete/{approved}", post(complete_request))
-        .route("/requests/user/:user_id", get(list_user_requests))
+        .route("/requests/user/{user_id}", get(list_user_requests))
         .with_state(request_service)
 }
 

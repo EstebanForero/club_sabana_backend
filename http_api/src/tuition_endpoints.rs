@@ -19,7 +19,7 @@ pub fn tuition_router(tuition_service: TuitionService) -> Router {
         .route("/tuitions/pay/{amount}", post(pay_tuition))
         .route("/tuitions", get(list_tuitions))
         .route("/tuitions/{user_id}", get(list_user_tuitions))
-        .route("/tuitions/active/:user_id", get(has_active_tuition))
+        .route("/tuitions/active/{user_id}", get(has_active_tuition))
         .with_state(tuition_service)
 }
 
