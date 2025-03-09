@@ -124,6 +124,10 @@ impl CategoryService {
             .await
     }
 
+    pub async fn get_user_categories(&self, user_id: Uuid) -> Result<Vec<UserCategory>> {
+        self.user_category_repo.get_user_categories(user_id).await
+    }
+
     pub async fn add_user_to_category(&self, user_id: Uuid, category_id: Uuid) -> Result<()> {
         if self.user_has_category(user_id, category_id).await? {
             return Err(Error::UserAlreadyHasCategory);

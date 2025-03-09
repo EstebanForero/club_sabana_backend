@@ -30,6 +30,10 @@ pub fn tournament_router(tournament_service: TournamentService) -> Router {
         .route("/tournaments/{id}/register", post(register_user))
         .route("/tournaments/{id}/attendance", post(record_attendance))
         .route("/tournaments/{id}/position", put(update_position))
+        .route(
+            "/users/{id}/eligible-tournaments",
+            get(get_eligible_tournaments),
+        )
         .with_state(tournament_service)
 }
 
@@ -119,6 +123,18 @@ async fn record_attendance(
         .http_err("record attendance")?;
 
     Ok(Json("Attendance recorded successfully".to_string()))
+}
+
+async fn get_eligible_tournaments(
+    State(tournament_service): State<TournamentService>,
+    Path(user_id): Path<Uuid>,
+) -> Result<Json<Vec<Tournament>>, Response> {
+    let tournaments = tournament_service
+        .get_eligible_tournaments(user_id)
+        .await
+        .http_err("get eligible tournaments")?;
+
+    Ok(Json(tournaments))
 }
 
 async fn update_position(

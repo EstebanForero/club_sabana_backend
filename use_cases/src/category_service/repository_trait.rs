@@ -43,4 +43,6 @@ pub trait UserCategoryRepository: Send + Sync {
     async fn user_has_category(&self, id_user: Uuid, id_category: Uuid) -> Result<bool>;
 
     async fn create_user_category(&self, user_category: &UserCategory) -> Result<()>;
+
+    async fn get_user_categories(&self, user_id: Uuid) -> Result<Vec<UserCategory>>;
 }

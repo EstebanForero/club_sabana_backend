@@ -210,4 +210,21 @@ impl TournamentService {
 
         Ok(())
     }
+
+    pub async fn get_eligible_tournaments(&self, user_id: Uuid) -> Result<Vec<Tournament>> {
+        let all_tournaments = self.tournament_repo.list_tournaments().await?;
+
+        let user_categories = self.category_service.get_user_categories(user_id).await?;
+        let user_category_ids: Vec<Uuid> = user_categories
+            .into_iter()
+            .map(|uc| uc.id_category)
+            .collect();
+
+        let eligible_tournaments = all_tournaments
+            .into_iter()
+            .filter(|t| user_category_ids.contains(&t.id_category))
+            .collect();
+
+        Ok(eligible_tournaments)
+    }
 }

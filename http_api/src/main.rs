@@ -8,12 +8,13 @@ use request_endpoints::request_router;
 use serde::Deserialize;
 use tower_http::cors::CorsLayer;
 use tracing::{error, info};
+use training_endpoints::training_router;
 use tuition_endpoints::tuition_router;
 use turso_db::TursoDb;
 use use_cases::{
     category_service::CategoryService, request_service::RequestService,
-    tournament_service::TournamentService, tuition_service::TuitionService,
-    user_service::UserService,
+    tournament_service::TournamentService, training_service::TrainingService,
+    tuition_service::TuitionService, user_service::UserService,
 };
 
 mod auth;
@@ -21,6 +22,7 @@ mod category_endpoints;
 mod err;
 mod request_endpoints;
 mod tournament_endpoints;
+mod training_endpoints;
 mod tuition_endpoints;
 mod user_endpoints;
 
@@ -68,10 +70,17 @@ async fn main() {
 
     let tuition_service = TuitionService::new(Arc::new(turso_db.clone()));
 
+    let training_service = TrainingService::new(
+        Arc::new(turso_db.clone()),
+        Arc::new(turso_db.clone()),
+        category_service.clone(),
+    );
+
     main_router = main_router
         .merge(user_endpoints::user_router(user_service, &config.token_key))
         .merge(tournament_endpoints::tournament_router(tournament_service))
         .merge(category_endpoints::category_router(category_service))
+        .merge(training_router(training_service))
         .merge(request_router(request_service))
         .merge(tuition_router(tuition_service));
 

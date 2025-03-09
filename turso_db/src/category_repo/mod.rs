@@ -137,6 +137,37 @@ impl UserCategoryRepository for TursoDb {
 
         Ok(())
     }
+
+    async fn get_user_categories(&self, user_id: Uuid) -> Result<Vec<UserCategory>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT id_user, id_category, user_level 
+                 FROM user_category 
+                 WHERE id_user = ?1 AND deleted = 0",
+                params![user_id.to_string()],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut categories = Vec::new();
+
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?
+        {
+            let category = de::from_row::<UserCategory>(&row)
+                .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+            categories.push(category);
+        }
+
+        Ok(categories)
+    }
 }
 
 #[async_trait]
