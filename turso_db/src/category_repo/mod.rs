@@ -1,10 +1,10 @@
 use async_trait::async_trait;
-use entities::category::{Category, CategoryRequirement};
+use entities::category::{Category, CategoryRequirement, Level};
 use entities::user::UserCategory;
 use libsql::{de, params};
 use use_cases::category_service::err::{Error, Result};
 use use_cases::category_service::repository_trait::{
-    CategoryRepository, CategoryRequirementRepository, UserCategoryRepository,
+    CategoryRepository, CategoryRequirementRepository, LevelRepository, UserCategoryRepository,
 };
 
 use uuid::Uuid;
@@ -41,6 +41,7 @@ required_level, deleted) VALUES (?1, ?2, ?3, ?4, ?5)",
         let mut rows = conn
             .query(
                 "SELECT id_category_requirement, id_category, requirement_description, required_level, deleted 
+FROM category_requirement
 WHERE deleted = 0 AND id_category = ?1",
                 params![category_id.to_string()],
             )
@@ -94,6 +95,118 @@ impl UserCategoryRepository for TursoDb {
             return Ok(Some(category));
         }
         Ok(None)
+    }
+
+    async fn user_has_category(&self, id_user: Uuid, id_category: Uuid) -> Result<bool> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT 1 FROM user_category WHERE id_category = ?1 AND id_user = ?2 AND deleted = 0",
+                params![id_user.to_string(), id_category.to_string()],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        Ok(rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?
+            .is_some())
+    }
+
+    async fn create_user_category(&self, user_category: &UserCategory) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        conn.execute(
+            "INSERT INTO user_category (id_user, id_category, user_level, deleted) VALUES (?1, ?2, ?3, 0)",
+            params![
+                user_category.id_user.to_string(),
+                user_category.id_category.to_string(),
+                user_category.user_level.to_string()
+            ],
+        )
+        .await
+        .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl LevelRepository for TursoDb {
+    async fn create_level(&self, level: &Level) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+        conn.execute(
+            "INSERT INTO level (level_name) VALUES (?1)",
+            params![level.level_name.to_string()],
+        )
+        .await
+        .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn get_level_by_id(&self, id: Uuid) -> Result<Option<Level>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT level_name FROM level WHERE level_name = ?1",
+                params![id.to_string()],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        if let Some(rows_res) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?
+        {
+            let level = de::from_row::<Level>(&rows_res)
+                .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+            return Ok(Some(level));
+        }
+        Ok(None)
+    }
+
+    async fn list_levels(&self) -> Result<Vec<Level>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut rows = conn
+            .query("SELECT id_level, name FROM level", params![])
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut res: Vec<Level> = Vec::new();
+
+        while let Some(res_row) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?
+        {
+            res.push(
+                de::from_row::<Level>(&res_row)
+                    .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?,
+            );
+        }
+
+        Ok(res)
     }
 }
 
@@ -218,7 +331,7 @@ impl CategoryRepository for TursoDb {
 
         let mut rows = conn
             .query(
-                "SELECT id_category, name, min_age, max_age, deleted WHERE deleted = 0",
+                "SELECT id_category, name, min_age, max_age, deleted FROM category WHERE deleted = 0",
                 params![],
             )
             .await

@@ -1,6 +1,8 @@
 pub mod err;
 pub mod repository_trait;
 
+use crate::category_service::{repository_trait::UserCategoryRepository, CategoryService};
+
 use self::err::{Error, Result};
 use entities::tournament::{
     Tournament, TournamentAttendance, TournamentCreation, TournamentRegistration,
@@ -16,6 +18,7 @@ pub struct TournamentService {
     tournament_repo: Arc<dyn TournamentRepository + Send + Sync>,
     registration_repo: Arc<dyn TournamentRegistrationRepository + Send + Sync>,
     attendance_repo: Arc<dyn TournamentAttendanceRepository + Send + Sync>,
+    category_service: CategoryService,
 }
 
 impl TournamentService {
@@ -23,11 +26,13 @@ impl TournamentService {
         tournament_repo: Arc<dyn TournamentRepository + Send + Sync>,
         registration_repo: Arc<dyn TournamentRegistrationRepository + Send + Sync>,
         attendance_repo: Arc<dyn TournamentAttendanceRepository + Send + Sync>,
+        category_service: CategoryService,
     ) -> Self {
         Self {
             tournament_repo,
             registration_repo,
             attendance_repo,
+            category_service,
         }
     }
 
@@ -99,13 +104,18 @@ impl TournamentService {
     }
 
     pub async fn register_user(&self, registration: TournamentRegistration) -> Result<()> {
-        if self
+        let tournament = self
             .tournament_repo
             .get_tournament_by_id(registration.id_tournament)
             .await?
-            .is_none()
+            .ok_or(Error::TournamentNotFound)?;
+
+        if !self
+            .category_service
+            .user_has_category(registration.id_user, tournament.id_category)
+            .await?
         {
-            return Err(Error::TournamentNotFound);
+            return Err(Error::UserDoesNotMeetCategoryRequirements);
         }
 
         let registrations = self

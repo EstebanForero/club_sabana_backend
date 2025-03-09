@@ -1,3 +1,5 @@
+use crate::category::LevelName;
+
 use super::date_serde;
 use super::datetime_serde;
 use chrono::{NaiveDate, NaiveDateTime};
@@ -75,5 +77,5 @@ pub struct IdentificationInfo {
 pub struct UserCategory {
     pub id_user: Uuid,
     pub id_category: Uuid,
-    pub user_level: String,
+    pub user_level: LevelName,
 }

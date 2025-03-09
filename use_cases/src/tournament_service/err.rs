@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::category_service;
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Error, Debug)]
@@ -22,4 +24,8 @@ pub enum Error {
     PositionAlreadyTaken,
     #[error("User did not attend tournament")]
     UserDidNotAttend,
+    #[error("User does not meet tournament category requirements")]
+    UserDoesNotMeetCategoryRequirements,
+    #[error("Category Service Error")]
+    CategoryServiceError(#[from] category_service::err::Error),
 }

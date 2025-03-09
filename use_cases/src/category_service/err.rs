@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::user_service;
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Error, Debug)]
@@ -30,4 +32,13 @@ pub enum Error {
 
     #[error("Level not found")]
     LevelNotFound,
+
+    #[error("Invalid age")]
+    InvalidUserAge,
+
+    #[error("Presequisite category level, is less than the required")]
+    InvalidRequirementLevel,
+
+    #[error("Error in user service")]
+    UserServiceError(#[from] user_service::err::Error),
 }

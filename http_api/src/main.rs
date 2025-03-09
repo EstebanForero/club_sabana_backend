@@ -50,16 +50,18 @@ async fn main() {
 
     let user_service = UserService::new(Arc::new(turso_db.clone()), Arc::new(password_hasher));
 
-    let tournament_service = TournamentService::new(
-        Arc::new(turso_db.clone()),
-        Arc::new(turso_db.clone()),
-        Arc::new(turso_db.clone()),
-    );
-
     let category_service = CategoryService::new(
         Arc::new(turso_db.clone()),
         Arc::new(turso_db.clone()),
         Arc::new(turso_db.clone()),
+        user_service.clone(),
+    );
+
+    let tournament_service = TournamentService::new(
+        Arc::new(turso_db.clone()),
+        Arc::new(turso_db.clone()),
+        Arc::new(turso_db.clone()),
+        category_service.clone(),
     );
 
     let request_service = RequestService::new(Arc::new(turso_db.clone()));

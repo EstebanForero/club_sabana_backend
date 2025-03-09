@@ -153,6 +153,13 @@ impl<T> HttpError<T> for use_cases::category_service::err::Result<T> {
                 Error::UserAlreadyHasCategory => "User already has this category",
                 Error::UserDoesNotMeetRequirements => "User does not meet category requirements",
                 Error::LevelNotFound => "Level not found",
+                Error::InvalidUserAge => {
+                    "The age of the user is not between the specified category range"
+                }
+                Error::InvalidRequirementLevel => {
+                    "The user don't have the necesary level in one of it's category requirements"
+                }
+                Error::UserServiceError(error) => "Error with the user service",
             }
             .to_err_response()
         })

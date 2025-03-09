@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use enum2str::EnumStr;
 use partial_struct::Partial;
 use serde::{Deserialize, Serialize};
@@ -29,9 +31,29 @@ pub struct CategoryRequirement {
     pub required_level: LevelName,
 }
 
-#[derive(Debug, Serialize, Deserialize, EnumStr)]
+#[derive(Debug, Serialize, Deserialize, EnumStr, PartialEq)]
 pub enum LevelName {
     BEGGINER,
     AMATEUR,
     PROFESSIONAL,
+}
+
+impl PartialOrd for LevelName {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        let ordering = match self {
+            LevelName::BEGGINER => match other {
+                LevelName::BEGGINER => Ordering::Equal,
+                LevelName::AMATEUR => Ordering::Greater,
+                LevelName::PROFESSIONAL => Ordering::Greater,
+            },
+            LevelName::AMATEUR => match other {
+                LevelName::BEGGINER => Ordering::Less,
+                LevelName::AMATEUR => Ordering::Equal,
+                LevelName::PROFESSIONAL => Ordering::Greater,
+            },
+            LevelName::PROFESSIONAL => todo!(),
+        };
+
+        Some(ordering)
+    }
 }

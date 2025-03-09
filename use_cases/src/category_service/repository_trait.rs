@@ -6,7 +6,6 @@ use entities::{
 };
 use uuid::Uuid;
 
-/// Trait defining category-related operations
 #[async_trait]
 pub trait CategoryRepository: Send + Sync {
     async fn create_category(&self, category: &Category) -> Result<()>;
@@ -17,14 +16,13 @@ pub trait CategoryRepository: Send + Sync {
     async fn get_category_by_name(&self, name: &str) -> Result<Option<Category>>;
 }
 
-/// Trait defining level-related operations
+#[async_trait]
 pub trait LevelRepository: Send + Sync {
-    fn create_level(&self, level: &Level) -> Result<()>;
-    fn get_level_by_id(&self, id: Uuid) -> Result<Option<Level>>;
-    fn list_levels(&self) -> Result<Vec<Level>>;
+    async fn create_level(&self, level: &Level) -> Result<()>;
+    async fn get_level_by_id(&self, id: Uuid) -> Result<Option<Level>>;
+    async fn list_levels(&self) -> Result<Vec<Level>>;
 }
 
-/// Trait defining category requirements
 #[async_trait]
 pub trait CategoryRequirementRepository: Send + Sync {
     async fn create_category_requirement(&self, requirement: &CategoryRequirement) -> Result<()>;
@@ -41,4 +39,8 @@ pub trait UserCategoryRepository: Send + Sync {
         id_user: Uuid,
         id_category: Uuid,
     ) -> Result<Option<UserCategory>>;
+
+    async fn user_has_category(&self, id_user: Uuid, id_category: Uuid) -> Result<bool>;
+
+    async fn create_user_category(&self, user_category: &UserCategory) -> Result<()>;
 }
