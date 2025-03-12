@@ -17,14 +17,17 @@ pub fn training_router(training_service: TrainingService) -> Router {
         .route("/health-training", get(alive))
         .route("/trainings", post(create_training).get(list_trainings))
         .route(
-            "/trainings/:id",
+            "/trainings/{id}",
             get(get_training)
                 .put(update_training)
                 .delete(delete_training),
         )
-        .route("/trainings/:id/register", post(register_user))
-        .route("/trainings/:id/attendance", post(mark_attendance))
-        .route("/users/:id/eligible-trainings", get(get_eligible_trainings))
+        .route("/trainings/{id}/register", post(register_user))
+        .route("/trainings/{id}/attendance", post(mark_attendance))
+        .route(
+            "/users/{id}/eligible-trainings",
+            get(get_eligible_trainings),
+        )
         .with_state(training_service)
 }
 
