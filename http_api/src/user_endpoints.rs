@@ -86,26 +86,6 @@ async fn log_in_user(
     }))
 }
 
-//async fn log_in_user(
-//    State((user_service, token_key)): State<(UserService, String)>,
-//    Json(user_log_in_info): Json<UserLogInInfo>,
-//) -> Result<Json<LogInResponse>, Response> {
-//    let log_in_response = user_service
-//        .log_in_user(&user_log_in_info)
-//        .await
-//        .map_err(|err| internal_error_response(&message_from_err(err, "log in user")))?;
-//
-//    let token = generate_jwt(&log_in_response, &token_key).map_err(|err| {
-//        error!("Error log in user, generating jwt: {}", err.to_string());
-//        internal_error_response("Internal error generating token")
-//    })?;
-//
-//    Ok(Json(LogInResponse {
-//        token,
-//        user_rol: log_in_response.user_rol,
-//    }))
-//}
-
 async fn register_user(
     State((user_service, _)): State<(UserService, String)>,
     Json(user_creation): Json<UserCreation>,
@@ -117,20 +97,6 @@ async fn register_user(
 
     Ok((StatusCode::OK, "User added succesfully"))
 }
-
-//async fn register_user(
-//    State((user_service, _)): State<(UserService, String)>,
-//    Json(user_creation): Json<UserCreation>,
-//) -> impl IntoResponse {
-//    if let Err(err) = user_service.register_user(user_creation).await {
-//        (
-//            StatusCode::INTERNAL_SERVER_ERROR,
-//            message_from_err(err, "register user"),
-//        )
-//    } else {
-//        (StatusCode::OK, "User added succesfully".into())
-//    }
-//}
 
 impl<T> HttpError<T> for Result<T, jsonwebtoken::errors::Error> {
     fn http_err(self, endpoint: &str) -> HttpResult<T> {
