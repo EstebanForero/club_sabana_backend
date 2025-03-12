@@ -24,8 +24,9 @@ benches/**/target/
 .env.*.local
 secrets/
 
-.txt
-**/*.txt
+*.txt
+*.bin
+rust_digest
 
 
 # Logs and debugging
