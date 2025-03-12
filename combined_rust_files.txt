@@ -19,6 +19,8 @@ impl PasswordHasher for BcryptHasher {
     }
 }
 --- entities/src/category.rs ---
+use std::cmp::Ordering;
+
 use enum2str::EnumStr;
 use partial_struct::Partial;
 use serde::{Deserialize, Serialize};
@@ -50,11 +52,31 @@ pub struct CategoryRequirement {
     pub required_level: LevelName,
 }
 
-#[derive(Debug, Serialize, Deserialize, EnumStr)]
+#[derive(Debug, Serialize, Deserialize, EnumStr, PartialEq)]
 pub enum LevelName {
     BEGGINER,
     AMATEUR,
     PROFESSIONAL,
+}
+
+impl PartialOrd for LevelName {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        let ordering = match self {
+            LevelName::BEGGINER => match other {
+                LevelName::BEGGINER => Ordering::Equal,
+                LevelName::AMATEUR => Ordering::Greater,
+                LevelName::PROFESSIONAL => Ordering::Greater,
+            },
+            LevelName::AMATEUR => match other {
+                LevelName::BEGGINER => Ordering::Less,
+                LevelName::AMATEUR => Ordering::Equal,
+                LevelName::PROFESSIONAL => Ordering::Greater,
+            },
+            LevelName::PROFESSIONAL => todo!(),
+        };
+
+        Some(ordering)
+    }
 }
 --- entities/src/date_serde.rs ---
 use chrono::NaiveDate;
@@ -144,7 +166,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::{DateTime, NaiveDateTime};
     use serde::{Deserialize, Serialize};
     use serde_json;
@@ -209,10 +230,24 @@ mod tests {
 pub mod category;
 pub mod date_serde;
 pub mod datetime_serde;
+pub mod request;
 pub mod tournament;
 pub mod training;
 pub mod tuition;
 pub mod user;
+--- entities/src/request.rs ---
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Request {
+    pub id: Uuid,
+    pub requester_id: Uuid,
+    pub requested_command: String,
+    pub justification: String,
+    pub approved: Option<bool>,
+    pub approver_id: Option<Uuid>,
+}
 --- entities/src/tournament.rs ---
 use super::datetime_serde;
 use chrono::NaiveDateTime;
@@ -286,7 +321,7 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct Tuition {
     pub id_tuition: Uuid,
     pub id_user: Uuid,
@@ -295,6 +330,8 @@ pub struct Tuition {
     pub payment_date: NaiveDateTime,
 }
 --- entities/src/user.rs ---
+use crate::category::LevelName;
+
 use super::date_serde;
 use super::datetime_serde;
 use chrono::{NaiveDate, NaiveDateTime};
@@ -372,7 +409,7 @@ pub struct IdentificationInfo {
 pub struct UserCategory {
     pub id_user: Uuid,
     pub id_category: Uuid,
-    pub user_level: String,
+    pub user_level: LevelName,
 }
 --- http_api/src/auth.rs ---
 use axum::{
@@ -624,6 +661,13 @@ impl<T> HttpError<T> for use_cases::category_service::err::Result<T> {
                 Error::UserAlreadyHasCategory => "User already has this category",
                 Error::UserDoesNotMeetRequirements => "User does not meet category requirements",
                 Error::LevelNotFound => "Level not found",
+                Error::InvalidUserAge => {
+                    "The age of the user is not between the specified category range"
+                }
+                Error::InvalidRequirementLevel => {
+                    "The user don't have the necesary level in one of it's category requirements"
+                }
+                Error::UserServiceError(error) => "Error with the user service",
             }
             .to_err_response()
         })
@@ -663,19 +707,26 @@ use std::{
 };
 
 use axum::Router;
+use request_endpoints::request_router;
 use serde::Deserialize;
 use tower_http::cors::CorsLayer;
 use tracing::{error, info};
+use training_endpoints::training_router;
+use tuition_endpoints::tuition_router;
 use turso_db::TursoDb;
 use use_cases::{
-    category_service::CategoryService, tournament_service::TournamentService,
-    user_service::UserService,
+    category_service::CategoryService, request_service::RequestService,
+    tournament_service::TournamentService, training_service::TrainingService,
+    tuition_service::TuitionService, user_service::UserService,
 };
 
 mod auth;
 mod category_endpoints;
 mod err;
+mod request_endpoints;
 mod tournament_endpoints;
+mod training_endpoints;
+mod tuition_endpoints;
 mod user_endpoints;
 
 #[derive(Debug, Deserialize)]
@@ -703,22 +754,38 @@ async fn main() {
     let password_hasher = bcrypt_hasher::BcryptHasher;
 
     let user_service = UserService::new(Arc::new(turso_db.clone()), Arc::new(password_hasher));
-    let tournament_service = TournamentService::new(
-        Arc::new(turso_db.clone()),
-        Arc::new(turso_db.clone()),
-        Arc::new(turso_db.clone()),
-    );
+
     let category_service = CategoryService::new(
         Arc::new(turso_db.clone()),
         Arc::new(turso_db.clone()),
         Arc::new(turso_db.clone()),
+        user_service.clone(),
     );
 
-    main_router = main_router.merge(user_endpoints::user_router(user_service, &config.token_key));
+    let tournament_service = TournamentService::new(
+        Arc::new(turso_db.clone()),
+        Arc::new(turso_db.clone()),
+        Arc::new(turso_db.clone()),
+        category_service.clone(),
+    );
 
-    main_router = main_router.merge(tournament_endpoints::tournament_router(tournament_service));
+    let request_service = RequestService::new(Arc::new(turso_db.clone()));
 
-    main_router = main_router.merge(category_endpoints::category_router(category_service));
+    let tuition_service = TuitionService::new(Arc::new(turso_db.clone()));
+
+    let training_service = TrainingService::new(
+        Arc::new(turso_db.clone()),
+        Arc::new(turso_db.clone()),
+        category_service.clone(),
+    );
+
+    main_router = main_router
+        .merge(user_endpoints::user_router(user_service, &config.token_key))
+        .merge(tournament_endpoints::tournament_router(tournament_service))
+        .merge(category_endpoints::category_router(category_service))
+        .merge(training_router(training_service))
+        .merge(request_router(request_service))
+        .merge(tuition_router(tuition_service));
 
     let cors_layer = CorsLayer::permissive();
 
@@ -731,6 +798,120 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 
     axum::serve(listener, main_router).await.unwrap();
+}
+--- http_api/src/request_endpoints.rs ---
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, post},
+    Extension, Json, Router,
+};
+use entities::request::Request;
+use tracing::error;
+use use_cases::request_service::{err::Error, RequestService};
+use uuid::Uuid;
+
+use super::err::{HttpError, ToErrResponse};
+use crate::{auth::UserInfoAuth, err::HttpResult};
+
+pub fn request_router(request_service: RequestService) -> Router {
+    Router::new()
+        .route("/health-request", get(alive))
+        .route("/requests", post(create_request).get(list_requests))
+        .route("/requests/{id}", get(get_request))
+        .route("/requests/{id}/complete/{approved}", post(complete_request))
+        .route("/requests/user/{user_id}", get(list_user_requests))
+        .with_state(request_service)
+}
+
+async fn alive() -> &'static str {
+    "Request service is alive"
+}
+
+async fn create_request(
+    State(request_service): State<RequestService>,
+    Json(request): Json<Request>,
+) -> HttpResult<impl IntoResponse> {
+    request_service
+        .create_request(
+            request.requester_id,
+            request.requested_command,
+            request.justification,
+        )
+        .await
+        .http_err("create request")?;
+
+    Ok((StatusCode::CREATED, "Request created successfully"))
+}
+
+async fn get_request(
+    State(request_service): State<RequestService>,
+    Path(id): Path<Uuid>,
+) -> HttpResult<Json<Request>> {
+    let request = request_service
+        .get_request_by_id(id)
+        .await
+        .http_err("get request")?
+        .ok_or(Error::RequestNotFound)
+        .http_err("get request")?;
+
+    Ok(Json(request))
+}
+
+async fn complete_request(
+    State(request_service): State<RequestService>,
+    Path((id, approved)): Path<(Uuid, bool)>,
+    Extension(user_info): Extension<UserInfoAuth>,
+) -> HttpResult<impl IntoResponse> {
+    request_service
+        .complete_request(id, user_info.user_id, approved)
+        .await
+        .http_err("complete request")?;
+
+    Ok((StatusCode::OK, "Request completed successfully"))
+}
+
+async fn list_requests(
+    State(request_service): State<RequestService>,
+) -> HttpResult<Json<Vec<Request>>> {
+    let requests = request_service
+        .list_requests()
+        .await
+        .http_err("list requests")?;
+
+    Ok(Json(requests))
+}
+
+async fn list_user_requests(
+    State(request_service): State<RequestService>,
+    Path(user_id): Path<Uuid>,
+) -> HttpResult<Json<Vec<Request>>> {
+    let requests = request_service
+        .list_user_requests(user_id)
+        .await
+        .http_err("list user requests")?;
+
+    Ok(Json(requests))
+}
+
+impl<T> HttpError<T> for use_cases::request_service::err::Result<T> {
+    fn http_err(self, endpoint_name: &str) -> crate::err::HttpResult<T> {
+        self.map_err(|err| {
+            error!("Error in: {endpoint_name}");
+            match err {
+                Error::UnknownDatabaseError(error) => {
+                    error!("{error}");
+                    "We are having problems in the server, try again"
+                }
+                Error::RequestNotFound => "Request not found",
+                Error::RequestAlreadyCompleted => "Request already completed",
+                Error::SelfApprovalNotAllowed => "Cannot approve/reject your own request",
+                Error::InvalidApprover => "Invalid approver ID",
+            }
+            .to_err_response()
+        })
+    }
 }
 --- http_api/src/tournament_endpoints.rs ---
 use axum::{
@@ -765,6 +946,10 @@ pub fn tournament_router(tournament_service: TournamentService) -> Router {
         .route("/tournaments/{id}/register", post(register_user))
         .route("/tournaments/{id}/attendance", post(record_attendance))
         .route("/tournaments/{id}/position", put(update_position))
+        .route(
+            "/users/{id}/eligible-tournaments",
+            get(get_eligible_tournaments),
+        )
         .with_state(tournament_service)
 }
 
@@ -856,6 +1041,18 @@ async fn record_attendance(
     Ok(Json("Attendance recorded successfully".to_string()))
 }
 
+async fn get_eligible_tournaments(
+    State(tournament_service): State<TournamentService>,
+    Path(user_id): Path<Uuid>,
+) -> Result<Json<Vec<Tournament>>, Response> {
+    let tournaments = tournament_service
+        .get_eligible_tournaments(user_id)
+        .await
+        .http_err("get eligible tournaments")?;
+
+    Ok(Json(tournaments))
+}
+
 async fn update_position(
     State(tournament_service): State<TournamentService>,
     Path((tournament_id, user_id)): Path<(Uuid, Uuid)>,
@@ -886,6 +1083,258 @@ impl<T> HttpError<T> for use_cases::tournament_service::err::Result<T> {
                 Error::NegativePosition => "Position must be positive",
                 Error::PositionAlreadyTaken => "Position already taken",
                 Error::UserDidNotAttend => "User did not attend tournament",
+                Error::UserDoesNotMeetCategoryRequirements => {
+                    "User is not part of the category required to join the tournament"
+                }
+                Error::CategoryServiceError(error) => "Error in the category service",
+            }
+            .to_err_response()
+        })
+    }
+}
+--- http_api/src/training_endpoints.rs ---
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::{get, post, put},
+    Json, Router,
+};
+use entities::training::{Training, TrainingRegistration};
+use tracing::error;
+use use_cases::training_service::{err::Error, TrainingService};
+use uuid::Uuid;
+
+use crate::err::{HttpError, HttpResult, ToErrResponse};
+
+pub fn training_router(training_service: TrainingService) -> Router {
+    Router::new()
+        .route("/health-training", get(alive))
+        .route("/trainings", post(create_training).get(list_trainings))
+        .route(
+            "/trainings/:id",
+            get(get_training)
+                .put(update_training)
+                .delete(delete_training),
+        )
+        .route("/trainings/:id/register", post(register_user))
+        .route("/trainings/:id/attendance", post(mark_attendance))
+        .route("/users/:id/eligible-trainings", get(get_eligible_trainings))
+        .with_state(training_service)
+}
+
+async fn alive() -> &'static str {
+    "Training service is alive"
+}
+
+async fn create_training(
+    State(training_service): State<TrainingService>,
+    Json(training): Json<Training>,
+) -> HttpResult<impl IntoResponse> {
+    training_service
+        .create_training(&training)
+        .await
+        .http_err("create training")?;
+
+    Ok((StatusCode::OK, "Training created successfully"))
+}
+
+async fn get_training(
+    State(training_service): State<TrainingService>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Training>, Response> {
+    let training = training_service
+        .get_training(id)
+        .await
+        .http_err("get training")?;
+
+    Ok(Json(training))
+}
+
+async fn update_training(
+    State(training_service): State<TrainingService>,
+    Json(training): Json<Training>,
+) -> Result<(), Response> {
+    training_service
+        .update_training(&training)
+        .await
+        .http_err("update training")?;
+
+    Ok(())
+}
+
+async fn delete_training(
+    State(training_service): State<TrainingService>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<String>, Response> {
+    training_service
+        .delete_training(id)
+        .await
+        .http_err("delete training")?;
+
+    Ok(Json("Training deleted successfully".to_string()))
+}
+
+async fn list_trainings(
+    State(training_service): State<TrainingService>,
+) -> Result<Json<Vec<Training>>, Response> {
+    let trainings = training_service
+        .list_trainings()
+        .await
+        .http_err("list trainings")?;
+
+    Ok(Json(trainings))
+}
+
+async fn register_user(
+    State(training_service): State<TrainingService>,
+    Json(registration): Json<TrainingRegistration>,
+) -> Result<Json<String>, Response> {
+    training_service
+        .register_user(registration)
+        .await
+        .http_err("register user")?;
+
+    Ok(Json("User registered successfully".to_string()))
+}
+
+async fn mark_attendance(
+    State(training_service): State<TrainingService>,
+    Path((training_id, user_id)): Path<(Uuid, Uuid)>,
+    Json(attended): Json<bool>,
+) -> Result<Json<String>, Response> {
+    training_service
+        .mark_attendance(training_id, user_id, attended)
+        .await
+        .http_err("mark attendance")?;
+
+    Ok(Json("Attendance marked successfully".to_string()))
+}
+
+async fn get_eligible_trainings(
+    State(training_service): State<TrainingService>,
+    Path(user_id): Path<Uuid>,
+) -> Result<Json<Vec<Training>>, Response> {
+    let trainings = training_service
+        .get_eligible_trainings(user_id)
+        .await
+        .http_err("get eligible trainings")?;
+
+    Ok(Json(trainings))
+}
+
+impl<T> HttpError<T> for use_cases::training_service::err::Result<T> {
+    fn http_err(self, endpoint_name: &str) -> crate::err::HttpResult<T> {
+        self.map_err(|err| {
+            error!("Error in: {endpoint_name}");
+            match err {
+                Error::UnknownDatabaseError(error) => {
+                    error!("{error}");
+                    "We are having problems in the server, try again"
+                }
+                Error::TrainingNotFound => "Training not found",
+                Error::UserAlreadyRegistered => "User already registered for this training",
+                Error::UserDoesNotMeetCategoryRequirements => {
+                    "User does not meet category requirements for this training"
+                }
+                Error::InvalidDates => "Invalid training dates",
+                Error::UserNotRegistered => "User not registered for this training",
+                Error::RegistrationNotFound => "Training registration not found",
+                Error::CategoryServiceError(_) => "Error in the category service",
+            }
+            .to_err_response()
+        })
+    }
+}
+--- http_api/src/tuition_endpoints.rs ---
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, post},
+    Extension, Json, Router,
+};
+use entities::tuition::Tuition;
+use tracing::error;
+use use_cases::tuition_service::{err::Error, TuitionService};
+use uuid::Uuid;
+
+use super::err::{HttpError, ToErrResponse};
+use crate::{auth::UserInfoAuth, err::HttpResult};
+
+pub fn tuition_router(tuition_service: TuitionService) -> Router {
+    Router::new()
+        .route("/health-tuition", get(alive))
+        .route("/tuitions/pay/{amount}", post(pay_tuition))
+        .route("/tuitions", get(list_tuitions))
+        .route("/tuitions/{user_id}", get(list_user_tuitions))
+        .route("/tuitions/active/{user_id}", get(has_active_tuition))
+        .with_state(tuition_service)
+}
+
+async fn alive() -> &'static str {
+    "Tuition service is alive"
+}
+async fn pay_tuition(
+    State(tuition_service): State<TuitionService>,
+    Path(amount): Path<f64>,
+    Extension(user_info): Extension<UserInfoAuth>,
+) -> HttpResult<impl IntoResponse> {
+    tuition_service
+        .pay_tuition(user_info.user_id, amount)
+        .await
+        .http_err("pay tuition")?;
+
+    Ok((StatusCode::CREATED, "Tuition payment recorded successfully"))
+}
+
+async fn list_tuitions(
+    State(tuition_service): State<TuitionService>,
+) -> HttpResult<Json<Vec<Tuition>>> {
+    let tuitions = tuition_service
+        .get_all_tuitions()
+        .await
+        .http_err("list tuitions")?;
+
+    Ok(Json(tuitions))
+}
+
+async fn list_user_tuitions(
+    State(tuition_service): State<TuitionService>,
+    Path(user_id): Path<Uuid>,
+) -> HttpResult<Json<Vec<Tuition>>> {
+    let tuitions = tuition_service
+        .get_user_tuitions(user_id)
+        .await
+        .http_err("list user tuitions")?;
+
+    Ok(Json(tuitions))
+}
+
+async fn has_active_tuition(
+    State(tuition_service): State<TuitionService>,
+    Path(user_id): Path<Uuid>,
+) -> HttpResult<Json<bool>> {
+    let has_active = tuition_service
+        .has_active_tuition(user_id)
+        .await
+        .http_err("check active tuition")?;
+
+    Ok(Json(has_active))
+}
+
+impl<T> HttpError<T> for use_cases::tuition_service::err::Result<T> {
+    fn http_err(self, endpoint_name: &str) -> crate::err::HttpResult<T> {
+        self.map_err(|err| {
+            error!("Error in: {endpoint_name}");
+            match err {
+                Error::UnknownDatabaseError(error) => {
+                    error!("{error}");
+                    "We are having problems in the server, try again"
+                }
+                Error::ActiveTuitionExists => "Active tuition already exists",
+                Error::InvalidAmount => "Invalid payment amount",
+                Error::TuitionNotFound => "Tuition not found",
             }
             .to_err_response()
         })
@@ -1068,12 +1517,12 @@ impl<T> HttpError<T> for err::Result<T> {
 }
 --- turso_db/src/category_repo/mod.rs ---
 use async_trait::async_trait;
-use entities::category::{Category, CategoryRequirement};
+use entities::category::{Category, CategoryRequirement, Level};
 use entities::user::UserCategory;
 use libsql::{de, params};
 use use_cases::category_service::err::{Error, Result};
 use use_cases::category_service::repository_trait::{
-    CategoryRepository, CategoryRequirementRepository, UserCategoryRepository,
+    CategoryRepository, CategoryRequirementRepository, LevelRepository, UserCategoryRepository,
 };
 
 use uuid::Uuid;
@@ -1110,6 +1559,7 @@ required_level, deleted) VALUES (?1, ?2, ?3, ?4, ?5)",
         let mut rows = conn
             .query(
                 "SELECT id_category_requirement, id_category, requirement_description, required_level, deleted 
+FROM category_requirement
 WHERE deleted = 0 AND id_category = ?1",
                 params![category_id.to_string()],
             )
@@ -1163,6 +1613,149 @@ impl UserCategoryRepository for TursoDb {
             return Ok(Some(category));
         }
         Ok(None)
+    }
+
+    async fn user_has_category(&self, id_user: Uuid, id_category: Uuid) -> Result<bool> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT 1 FROM user_category WHERE id_category = ?1 AND id_user = ?2 AND deleted = 0",
+                params![id_user.to_string(), id_category.to_string()],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        Ok(rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?
+            .is_some())
+    }
+
+    async fn create_user_category(&self, user_category: &UserCategory) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        conn.execute(
+            "INSERT INTO user_category (id_user, id_category, user_level, deleted) VALUES (?1, ?2, ?3, 0)",
+            params![
+                user_category.id_user.to_string(),
+                user_category.id_category.to_string(),
+                user_category.user_level.to_string()
+            ],
+        )
+        .await
+        .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn get_user_categories(&self, user_id: Uuid) -> Result<Vec<UserCategory>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT id_user, id_category, user_level 
+                 FROM user_category 
+                 WHERE id_user = ?1 AND deleted = 0",
+                params![user_id.to_string()],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut categories = Vec::new();
+
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?
+        {
+            let category = de::from_row::<UserCategory>(&row)
+                .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+            categories.push(category);
+        }
+
+        Ok(categories)
+    }
+}
+
+#[async_trait]
+impl LevelRepository for TursoDb {
+    async fn create_level(&self, level: &Level) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+        conn.execute(
+            "INSERT INTO level (level_name) VALUES (?1)",
+            params![level.level_name.to_string()],
+        )
+        .await
+        .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn get_level_by_id(&self, id: Uuid) -> Result<Option<Level>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut rows = conn
+            .query(
+                "SELECT level_name FROM level WHERE level_name = ?1",
+                params![id.to_string()],
+            )
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        if let Some(rows_res) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?
+        {
+            let level = de::from_row::<Level>(&rows_res)
+                .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+            return Ok(Some(level));
+        }
+        Ok(None)
+    }
+
+    async fn list_levels(&self) -> Result<Vec<Level>> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut rows = conn
+            .query("SELECT id_level, name FROM level", params![])
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        let mut res: Vec<Level> = Vec::new();
+
+        while let Some(res_row) = rows
+            .next()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?
+        {
+            res.push(
+                de::from_row::<Level>(&res_row)
+                    .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?,
+            );
+        }
+
+        Ok(res)
     }
 }
 
@@ -1287,7 +1880,7 @@ impl CategoryRepository for TursoDb {
 
         let mut rows = conn
             .query(
-                "SELECT id_category, name, min_age, max_age, deleted WHERE deleted = 0",
+                "SELECT id_category, name, min_age, max_age, deleted FROM category WHERE deleted = 0",
                 params![],
             )
             .await
@@ -1315,9 +1908,11 @@ use std::{error::Error, sync::Arc};
 use libsql::params;
 use libsql::{de, params::IntoParams, Connection, Rows};
 use serde::Deserialize;
+use uuid::Uuid;
 
 pub mod category_repo;
 mod migration;
+pub mod request_repo;
 pub mod tournament_repo;
 pub mod training_repo;
 pub mod tuition_repo;
@@ -1435,6 +2030,25 @@ impl TursoDb {
         }
 
         Ok(elements)
+    }
+
+    pub async fn create_test_user(&self, user_id: Uuid) -> Result<(), Box<dyn Error>> {
+        self.conn
+            .clone()
+            .unwrap()
+            .execute(
+                "INSERT INTO person (
+id_user, first_name, last_name, birth_date, registration_date,
+email, email_verified, phone_number, country_code, password,
+identification_number, identification_type, user_rol, deleted
+) VALUES (?1, 'Test', 'User', '2000-01-01', '2023-01-01 00:00:00',
+?2, 1, '123456789', 'CO', 'password',
+'123456789', 'CC', 'USER', 0)",
+                params![user_id.to_string(), format!("test{}@example.com", user_id)],
+            )
+            .await?;
+
+        Ok(())
     }
 
     pub async fn get_value_from_row<T, E>(
@@ -1571,27 +2185,19 @@ VALUES ('BEGGINER'), ('AMATEUR'), ('PROFESSIONAL')",
 --- turso_db/src/migration.rs ---
 pub fn get_migration() -> String {
     r#"
-PRAGMA foreign_keys = ON;
-
-----------------------------------------------------------------
 -- 1) user_rol
-----------------------------------------------------------------
 CREATE TABLE user_rol (
     user_rol       TEXT PRIMARY KEY,
     deleted        INTEGER NOT NULL DEFAULT 0  -- 0 = false, 1 = true
 );
 
-----------------------------------------------------------------
 -- 2) identification_type
-----------------------------------------------------------------
 CREATE TABLE identification_type (
     identification_type  TEXT PRIMARY KEY,
     deleted             INTEGER NOT NULL DEFAULT 0
 );
 
-----------------------------------------------------------------
 -- 3) category
-----------------------------------------------------------------
 CREATE TABLE category (
     id_category   TEXT PRIMARY KEY,
     name          TEXT NOT NULL,
@@ -1600,17 +2206,13 @@ CREATE TABLE category (
     deleted       INTEGER NOT NULL DEFAULT 0
 );
 
-----------------------------------------------------------------
 -- 4) level
-----------------------------------------------------------------
 CREATE TABLE level (
     level_name    TEXT PRIMARY KEY,
     deleted       INTEGER NOT NULL DEFAULT 0
 );
 
-----------------------------------------------------------------
--- 5) person (quoted because 'user' can be a reserved keyword)
-----------------------------------------------------------------
+-- 5) person
 CREATE TABLE person (
     id_user                TEXT PRIMARY KEY,
     first_name             TEXT NOT NULL,
@@ -1630,9 +2232,7 @@ CREATE TABLE person (
     FOREIGN KEY (user_rol) REFERENCES user_rol(user_rol)
 );
 
-----------------------------------------------------------------
 -- 6) category_requirement
-----------------------------------------------------------------
 CREATE TABLE category_requirement (
     id_category_requirement   TEXT PRIMARY KEY,
     id_category               TEXT NOT NULL,
@@ -1643,9 +2243,7 @@ CREATE TABLE category_requirement (
     FOREIGN KEY (required_level) REFERENCES level(level_name)
 );
 
-----------------------------------------------------------------
 -- 7) user_category
-----------------------------------------------------------------
 CREATE TABLE user_category (
     id_user      TEXT NOT NULL,
     id_category  TEXT NOT NULL,
@@ -1657,9 +2255,7 @@ CREATE TABLE user_category (
     FOREIGN KEY (user_level)  REFERENCES level(level_name)
 );
 
-----------------------------------------------------------------
 -- 8) tournament
-----------------------------------------------------------------
 CREATE TABLE tournament (
     id_tournament  TEXT PRIMARY KEY,
     name           TEXT NOT NULL,
@@ -1670,9 +2266,7 @@ CREATE TABLE tournament (
     FOREIGN KEY (id_category) REFERENCES category(id_category)
 );
 
-----------------------------------------------------------------
 -- 9) tournament_registration
-----------------------------------------------------------------
 CREATE TABLE tournament_registration (
     id_tournament        TEXT NOT NULL,
     id_user              TEXT NOT NULL,
@@ -1683,9 +2277,7 @@ CREATE TABLE tournament_registration (
     FOREIGN KEY (id_user)       REFERENCES person(id_user)
 );
 
-----------------------------------------------------------------
 -- 10) tournament_attendance
-----------------------------------------------------------------
 CREATE TABLE tournament_attendance (
     id_tournament       TEXT NOT NULL,
     id_user             TEXT NOT NULL,
@@ -1697,38 +2289,32 @@ CREATE TABLE tournament_attendance (
     FOREIGN KEY (id_user)       REFERENCES person(id_user)
 );
 
-----------------------------------------------------------------
 -- 11) training
-----------------------------------------------------------------
 CREATE TABLE training (
     id_training    TEXT PRIMARY KEY,
     name           TEXT NOT NULL,
     id_category    TEXT NOT NULL,
-    start_datetime TEXT NOT NULL,
-    end_datetime   TEXT NOT NULL,
+    start_datetime TEXT NOT NULL,     -- Example: 'YYYY-MM-DD HH:MM:SS'
+    end_datetime   TEXT NOT NULL,     -- Example: 'YYYY-MM-DD HH:MM:SS'
     minimum_payment REAL,
     deleted        INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (id_category) REFERENCES category(id_category)
 );
 
-----------------------------------------------------------------
--- 12) training_registration
-----------------------------------------------------------------
+-- 12) training_registration (updated: attendance_datetime is now nullable)
 CREATE TABLE training_registration (
     id_training          TEXT NOT NULL,
     id_user              TEXT NOT NULL,
     registration_datetime TEXT NOT NULL,   -- Example: 'YYYY-MM-DD HH:MM:SS'
-    attended            INTEGER NOT NULL DEFAULT 0,  -- 0 = false, 1 = true
-    attendance_datetime TEXT NOT NULL,    -- Example: 'YYYY-MM-DD HH:MM:SS'
-    deleted             INTEGER NOT NULL DEFAULT 0,
+    attended             INTEGER NOT NULL DEFAULT 0,  -- 0 = false, 1 = true
+    attendance_datetime  TEXT,              -- Changed to nullable
+    deleted              INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (id_training, id_user),
     FOREIGN KEY (id_training) REFERENCES training(id_training),
     FOREIGN KEY (id_user)     REFERENCES person(id_user)
 );
 
-----------------------------------------------------------------
 -- 13) tuition
-----------------------------------------------------------------
 CREATE TABLE tuition (
     id_tuition   TEXT PRIMARY KEY,
     id_user      TEXT NOT NULL,
@@ -1737,8 +2323,291 @@ CREATE TABLE tuition (
     deleted      INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (id_user) REFERENCES person(id_user)
 );
+
+-- 14) request_for_approval (new table)
+CREATE TABLE request_for_approval (
+    request_id         TEXT PRIMARY KEY,
+    requester_id       TEXT NOT NULL,
+    requested_command  TEXT NOT NULL,
+    justification      TEXT NOT NULL,
+    approved           INTEGER NOT NULL,  -- Bool stored as INTEGER (0 = false, 1 = true)
+    approver_id        TEXT,             -- Nullable, as approval may be pending
+    deleted            INTEGER NOT NULL DEFAULT 0,  -- Added for consistency
+    FOREIGN KEY (requester_id) REFERENCES person(id_user),
+    FOREIGN KEY (approver_id)  REFERENCES person(id_user)
+);
 "#
     .to_string()
+}
+--- turso_db/src/request_repo/mod.rs ---
+use async_trait::async_trait;
+use entities::request::Request;
+use libsql::params;
+use use_cases::request_service::err::{Error, Result};
+use use_cases::request_service::repository_trait::RequestRepository;
+use uuid::Uuid;
+
+use crate::TursoDb;
+
+#[async_trait]
+impl RequestRepository for TursoDb {
+    async fn create_request(&self, request: &Request) -> Result<()> {
+        self.execute_with_error(
+            "INSERT INTO request (
+                id, requester_id, requested_command, justification, approved, approver_id
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                request.id.to_string(),
+                request.requester_id.to_string(),
+                request.requested_command.clone(),
+                request.justification.clone(),
+                request.approved,
+                request.approver_id.map(|id| id.to_string())
+            ],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
+    async fn get_request_by_id(&self, id: Uuid) -> Result<Option<Request>> {
+        self.query_one_with_error(
+            "SELECT id, requester_id, requested_command, justification, approved, approver_id 
+             FROM request 
+             WHERE id = ?1",
+            params![id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
+    async fn update_request(&self, request: &Request) -> Result<()> {
+        self.execute_with_error(
+            "UPDATE request SET 
+                requester_id = ?1, 
+                requested_command = ?2, 
+                justification = ?3, 
+                approved = ?4, 
+                approver_id = ?5
+             WHERE id = ?6",
+            params![
+                request.requester_id.to_string(),
+                request.requested_command.clone(),
+                request.justification.clone(),
+                request.approved,
+                request.approver_id.map(|id| id.to_string()),
+                request.id.to_string()
+            ],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
+    async fn list_requests(&self) -> Result<Vec<Request>> {
+        self.query_many_with_error(
+            "SELECT id, requester_id, requested_command, justification, approved, approver_id 
+             FROM request",
+            params![],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
+    async fn list_requests_by_user(&self, user_id: Uuid) -> Result<Vec<Request>> {
+        self.query_many_with_error(
+            "SELECT id, requester_id, requested_command, justification, approved, approver_id 
+             FROM request 
+             WHERE requester_id = ?1",
+            params![user_id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::future::Future;
+
+    use super::*;
+    use entities::request::Request;
+    use rstest::{fixture, rstest};
+    use uuid::Uuid;
+
+    #[fixture]
+    async fn repository() -> TursoDb {
+        let db = crate::TestDbBuilder::create()
+            .await
+            .apply_doc_types()
+            .await
+            .apply_user_roles()
+            .await
+            .build();
+
+        // Create test requests table
+        let conn = db.get_connection().await.expect("Failed to get connection");
+        conn.execute_batch(
+            "CREATE TABLE request (
+                id TEXT PRIMARY KEY,
+                requester_id TEXT NOT NULL,
+                requested_command TEXT NOT NULL,
+                justification TEXT NOT NULL,
+                approved INTEGER,
+                approver_id TEXT
+            );",
+        )
+        .await
+        .expect("Failed to create test requests table");
+
+        db
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_create_and_get_request(repository: impl Future<Output = TursoDb>) {
+        let db = repository.await;
+        let request_id = Uuid::new_v4();
+        let requester_id = Uuid::new_v4();
+
+        let request = Request {
+            id: request_id,
+            requester_id,
+            requested_command: "Test Command".to_string(),
+            justification: "Test Justification".to_string(),
+            approved: None,
+            approver_id: None,
+        };
+
+        db.create_request(&request)
+            .await
+            .expect("Failed to create request");
+
+        let retrieved_request = db
+            .get_request_by_id(request_id)
+            .await
+            .expect("Failed to get request")
+            .expect("Request not found");
+
+        assert_eq!(request, retrieved_request);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_update_request(repository: impl Future<Output = TursoDb>) {
+        let db = repository.await;
+        let request_id = Uuid::new_v4();
+        let requester_id = Uuid::new_v4();
+        let approver_id = Uuid::new_v4();
+
+        let mut request = Request {
+            id: request_id,
+            requester_id,
+            requested_command: "Test Command".to_string(),
+            justification: "Test Justification".to_string(),
+            approved: None,
+            approver_id: None,
+        };
+
+        db.create_request(&request)
+            .await
+            .expect("Failed to create request");
+
+        // Update request
+        request.approved = Some(true);
+        request.approver_id = Some(approver_id);
+
+        db.update_request(&request)
+            .await
+            .expect("Failed to update request");
+
+        let updated_request = db
+            .get_request_by_id(request_id)
+            .await
+            .expect("Failed to get request")
+            .expect("Request not found");
+
+        assert_eq!(request, updated_request);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_list_requests(repository: impl Future<Output = TursoDb>) {
+        let db = repository.await;
+        let requester_id = Uuid::new_v4();
+
+        // Create 3 requests
+        for i in 0..3 {
+            let request = Request {
+                id: Uuid::new_v4(),
+                requester_id,
+                requested_command: format!("Command {i}"),
+                justification: format!("Justification {i}"),
+                approved: None,
+                approver_id: None,
+            };
+
+            db.create_request(&request)
+                .await
+                .expect("Failed to create request");
+        }
+
+        let requests = db.list_requests().await.expect("Failed to list requests");
+
+        assert_eq!(requests.len(), 3);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_list_requests_by_user(repository: impl Future<Output = TursoDb>) {
+        let db = repository.await;
+        let user1_id = Uuid::new_v4();
+        let user2_id = Uuid::new_v4();
+
+        // Create 2 requests for user1
+        for i in 0..2 {
+            let request = Request {
+                id: Uuid::new_v4(),
+                requester_id: user1_id,
+                requested_command: format!("Command {i}"),
+                justification: format!("Justification {i}"),
+                approved: None,
+                approver_id: None,
+            };
+
+            db.create_request(&request)
+                .await
+                .expect("Failed to create request");
+        }
+
+        // Create 1 request for user2
+        let request = Request {
+            id: Uuid::new_v4(),
+            requester_id: user2_id,
+            requested_command: "Command".to_string(),
+            justification: "Justification".to_string(),
+            approved: None,
+            approver_id: None,
+        };
+
+        db.create_request(&request)
+            .await
+            .expect("Failed to create request");
+
+        // Test listing for user1
+        let user1_requests = db
+            .list_requests_by_user(user1_id)
+            .await
+            .expect("Failed to list requests");
+
+        assert_eq!(user1_requests.len(), 2);
+
+        // Test listing for user2
+        let user2_requests = db
+            .list_requests_by_user(user2_id)
+            .await
+            .expect("Failed to list requests");
+
+        assert_eq!(user2_requests.len(), 1);
+    }
 }
 --- turso_db/src/tournament_repo/mod.rs ---
 use async_trait::async_trait;
@@ -1748,7 +2617,7 @@ use use_cases::tournament_service::err::{Error, Result};
 use use_cases::tournament_service::repository_trait::{
     TournamentAttendanceRepository, TournamentRegistrationRepository, TournamentRepository,
 };
-use uuid::{uuid, Uuid};
+use uuid::Uuid;
 
 use crate::TursoDb;
 
@@ -2607,6 +3476,258 @@ FROM training_registration WHERE id_training = 1?",
     }
 }
 --- turso_db/src/tuition_repo/mod.rs ---
+use async_trait::async_trait;
+use entities::tuition::Tuition;
+use libsql::params;
+use serde::Deserialize;
+use use_cases::tuition_service::err::{Error, Result};
+use use_cases::tuition_service::repository_trait::TuitionRepository;
+use uuid::Uuid;
+
+use crate::TursoDb;
+
+#[async_trait]
+impl TuitionRepository for TursoDb {
+    async fn record_tuition_payment(&self, tuition: &Tuition) -> Result<()> {
+        self.execute_with_error(
+            "INSERT INTO tuition (
+id_tuition, id_user, amount, payment_date, deleted
+) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                tuition.id_tuition.to_string(),
+                tuition.id_user.to_string(),
+                tuition.amount,
+                tuition.payment_date.format("%Y-%m-%d %H:%M:%S").to_string(),
+                0
+            ],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
+    async fn get_tuition_by_id(&self, id: Uuid) -> Result<Option<Tuition>> {
+        self.query_one_with_error(
+            "SELECT id_tuition, id_user, amount, payment_date 
+FROM tuition 
+WHERE id_tuition = ?1 AND deleted = 0",
+            params![id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
+    async fn list_tuition_payments_for_user(&self, user_id: Uuid) -> Result<Vec<Tuition>> {
+        self.query_many_with_error(
+            "SELECT id_tuition, id_user, amount, payment_date 
+FROM tuition 
+WHERE id_user = ?1 AND deleted = 0
+ORDER BY payment_date DESC",
+            params![user_id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
+    async fn list_all_tuition_payments(&self) -> Result<Vec<Tuition>> {
+        self.query_many_with_error(
+            "SELECT id_tuition, id_user, amount, payment_date 
+FROM tuition 
+WHERE deleted = 0",
+            params![],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
+    async fn has_active_tuition(&self, user_id: Uuid) -> Result<bool> {
+        #[derive(Deserialize)]
+        struct Count {
+            count: i64,
+        }
+
+        let count: Count = self
+            .query_one_with_error(
+                "SELECT COUNT(*) as count
+FROM tuition 
+WHERE id_user = ?1 
+AND deleted = 0 
+AND payment_date >= DATETIME('now', '-30 days')",
+                params![user_id.to_string()],
+                Error::UnknownDatabaseError,
+            )
+            .await?
+            .unwrap_or(Count { count: 0 });
+
+        Ok(count.count > 0)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::future::Future;
+
+    use super::*;
+    use chrono::Utc;
+    use entities::tuition::Tuition;
+    use rstest::{fixture, rstest};
+    use uuid::Uuid;
+
+    #[fixture]
+    async fn repository() -> TursoDb {
+        let db = crate::TestDbBuilder::create()
+            .await
+            .apply_doc_types()
+            .await
+            .apply_user_roles()
+            .await
+            .build();
+
+        let conn = db.get_connection().await.expect("Failed to get connection");
+        conn.execute("DELETE FROM tuition", params![])
+            .await
+            .expect("Failed to clear tuition table");
+        conn.execute("DELETE FROM person", params![])
+            .await
+            .expect("Failed to clear person table");
+
+        db
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_record_and_get_tuition(repository: impl Future<Output = TursoDb>) {
+        let db = repository.await;
+        let user_id = Uuid::new_v4();
+        let tuition_id = Uuid::new_v4();
+
+        // Create a test user to satisfy the foreign key constraint
+        db.create_test_user(user_id)
+            .await
+            .expect("Failed to create test user");
+
+        let tuition = Tuition {
+            id_tuition: tuition_id,
+            id_user: user_id,
+            amount: 100.0,
+            payment_date: Utc::now().naive_utc(),
+        };
+
+        // Record the tuition payment
+        db.record_tuition_payment(&tuition)
+            .await
+            .expect("Failed to record tuition");
+
+        // Retrieve and verify the tuition
+        let retrieved_tuition = db
+            .get_tuition_by_id(tuition_id)
+            .await
+            .expect("Failed to get tuition")
+            .expect("Tuition not found");
+
+        assert_eq!(tuition.id_tuition, retrieved_tuition.id_tuition);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_list_tuitions_for_user(repository: impl Future<Output = TursoDb>) {
+        let db = repository.await;
+        let user1_id = Uuid::new_v4();
+        let user2_id = Uuid::new_v4();
+
+        db.create_test_user(user1_id)
+            .await
+            .expect("Failed to create test user");
+        db.create_test_user(user2_id)
+            .await
+            .expect("Failed to create test user");
+
+        // Create 2 tuitions for user1
+        for i in 0..2 {
+            let tuition = Tuition {
+                id_tuition: Uuid::new_v4(),
+                id_user: user1_id,
+                amount: 100.0 + i as f64,
+                payment_date: Utc::now().naive_utc(),
+            };
+
+            db.record_tuition_payment(&tuition)
+                .await
+                .expect("Failed to record tuition");
+        }
+
+        // Create 1 tuition for user2
+        let tuition = Tuition {
+            id_tuition: Uuid::new_v4(),
+            id_user: user2_id,
+            amount: 200.0,
+            payment_date: Utc::now().naive_utc(),
+        };
+
+        db.record_tuition_payment(&tuition)
+            .await
+            .expect("Failed to record tuition");
+
+        let user1_tuitions = db
+            .list_tuition_payments_for_user(user1_id)
+            .await
+            .expect("Failed to list tuitions");
+
+        assert_eq!(user1_tuitions.len(), 2);
+        assert_eq!(user1_tuitions[0].id_user, user1_id);
+        assert_eq!(user1_tuitions[1].id_user, user1_id);
+
+        // Test listing for user2
+        let user2_tuitions = db
+            .list_tuition_payments_for_user(user2_id)
+            .await
+            .expect("Failed to list tuitions");
+
+        assert_eq!(user2_tuitions.len(), 1);
+        assert_eq!(user2_tuitions[0].id_user, user2_id);
+        assert_eq!(user2_tuitions[0].amount, 200.0);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_has_active_tuition(repository: impl Future<Output = TursoDb>) {
+        let db = repository.await;
+        let user_id = Uuid::new_v4();
+
+        db.create_test_user(user_id)
+            .await
+            .expect("Failed to create test user");
+
+        // Initially no active tuition
+        assert!(!db.has_active_tuition(user_id).await.unwrap());
+
+        // Add a tuition
+        let tuition = Tuition {
+            id_tuition: Uuid::new_v4(),
+            id_user: user_id,
+            amount: 100.0,
+            payment_date: Utc::now().naive_utc(),
+        };
+
+        db.record_tuition_payment(&tuition)
+            .await
+            .expect("Failed to record tuition");
+
+        // Now has active tuition
+        assert!(db.has_active_tuition(user_id).await.unwrap());
+
+        // Delete the tuition
+        db.execute_with_error(
+            "UPDATE tuition SET deleted = 1 WHERE id_user = ?1",
+            params![user_id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+        .expect("Failed to delete tuition");
+
+        // Should no longer have active tuition
+        assert!(!db.has_active_tuition(user_id).await.unwrap());
+    }
+}
 --- turso_db/src/user_repo/mod.rs ---
 use async_trait::async_trait;
 use entities::user::{IdType, User};
@@ -3142,6 +4263,8 @@ mod test {
 --- use_cases/src/category_service/err.rs ---
 use thiserror::Error;
 
+use crate::user_service;
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Error, Debug)]
@@ -3172,16 +4295,28 @@ pub enum Error {
 
     #[error("Level not found")]
     LevelNotFound,
+
+    #[error("Invalid age")]
+    InvalidUserAge,
+
+    #[error("Presequisite category level, is less than the required")]
+    InvalidRequirementLevel,
+
+    #[error("Error in user service")]
+    UserServiceError(#[from] user_service::err::Error),
 }
 --- use_cases/src/category_service/mod.rs ---
+use chrono::Utc;
 use entities::{
-    category::{Category, CategoryRequirement},
+    category::{Category, CategoryRequirement, LevelName},
     user::UserCategory,
 };
 use err::{Error, Result};
 use repository_trait::{CategoryRepository, CategoryRequirementRepository, UserCategoryRepository};
 use std::sync::Arc;
 use uuid::Uuid;
+
+use crate::user_service::{repository_trait::UserRepository, UserService};
 
 pub mod err;
 pub mod repository_trait;
@@ -3191,6 +4326,7 @@ pub struct CategoryService {
     category_repo: Arc<dyn CategoryRepository>,
     requirement_repo: Arc<dyn CategoryRequirementRepository>,
     user_category_repo: Arc<dyn UserCategoryRepository>,
+    user_service: UserService,
 }
 
 impl CategoryService {
@@ -3198,11 +4334,13 @@ impl CategoryService {
         category_repo: Arc<dyn CategoryRepository>,
         requirement_repo: Arc<dyn CategoryRequirementRepository>,
         user_category_repo: Arc<dyn UserCategoryRepository>,
+        user_repo: UserService,
     ) -> Self {
         Self {
             category_repo,
             requirement_repo,
             user_category_repo,
+            user_service: user_repo,
         }
     }
 
@@ -3288,6 +4426,61 @@ impl CategoryService {
             .await
     }
 
+    pub async fn user_has_category(&self, user_id: Uuid, category_id: Uuid) -> Result<bool> {
+        self.user_category_repo
+            .user_has_category(user_id, category_id)
+            .await
+    }
+
+    pub async fn get_user_categories(&self, user_id: Uuid) -> Result<Vec<UserCategory>> {
+        self.user_category_repo.get_user_categories(user_id).await
+    }
+
+    pub async fn add_user_to_category(&self, user_id: Uuid, category_id: Uuid) -> Result<()> {
+        if self.user_has_category(user_id, category_id).await? {
+            return Err(Error::UserAlreadyHasCategory);
+        }
+
+        let category = self.get_category_by_id(category_id).await?;
+
+        let user = self.user_service.get_user_by_id(user_id).await?;
+
+        let current_date = Utc::now().naive_utc().date();
+        let birth_date = user.birth_date;
+        let user_age = current_date.years_since(birth_date).unwrap_or(0);
+
+        if (category.min_age as u32) > user_age || (category.max_age as u32) < user_age {
+            return Err(Error::InvalidUserAge);
+        }
+
+        let requirements = self.get_category_requirements(category_id).await?;
+
+        for requirement in requirements {
+            if let Some(user_category) = self
+                .get_user_category(user_id, requirement.id_category)
+                .await?
+            {
+                if user_category.user_level < requirement.required_level {
+                    return Err(Error::InvalidRequirementLevel);
+                }
+            } else {
+                return Err(Error::UserDoesNotMeetRequirements);
+            }
+        }
+
+        let user_category = UserCategory {
+            id_user: user_id,
+            id_category: category_id,
+            user_level: LevelName::BEGGINER,
+        };
+
+        self.user_category_repo
+            .create_user_category(&user_category)
+            .await?;
+
+        Ok(())
+    }
+
     // get user categories it is elegible to
     //pub async fn get_elegible_categories(
     //    &self,
@@ -3306,7 +4499,6 @@ use entities::{
 };
 use uuid::Uuid;
 
-/// Trait defining category-related operations
 #[async_trait]
 pub trait CategoryRepository: Send + Sync {
     async fn create_category(&self, category: &Category) -> Result<()>;
@@ -3317,14 +4509,13 @@ pub trait CategoryRepository: Send + Sync {
     async fn get_category_by_name(&self, name: &str) -> Result<Option<Category>>;
 }
 
-/// Trait defining level-related operations
+#[async_trait]
 pub trait LevelRepository: Send + Sync {
-    fn create_level(&self, level: &Level) -> Result<()>;
-    fn get_level_by_id(&self, id: Uuid) -> Result<Option<Level>>;
-    fn list_levels(&self) -> Result<Vec<Level>>;
+    async fn create_level(&self, level: &Level) -> Result<()>;
+    async fn get_level_by_id(&self, id: Uuid) -> Result<Option<Level>>;
+    async fn list_levels(&self) -> Result<Vec<Level>>;
 }
 
-/// Trait defining category requirements
 #[async_trait]
 pub trait CategoryRequirementRepository: Send + Sync {
     async fn create_category_requirement(&self, requirement: &CategoryRequirement) -> Result<()>;
@@ -3341,15 +4532,132 @@ pub trait UserCategoryRepository: Send + Sync {
         id_user: Uuid,
         id_category: Uuid,
     ) -> Result<Option<UserCategory>>;
+
+    async fn user_has_category(&self, id_user: Uuid, id_category: Uuid) -> Result<bool>;
+
+    async fn create_user_category(&self, user_category: &UserCategory) -> Result<()>;
+
+    async fn get_user_categories(&self, user_id: Uuid) -> Result<Vec<UserCategory>>;
 }
 --- use_cases/src/lib.rs ---
 pub mod category_service;
+pub mod request_service;
 pub mod tournament_service;
 pub mod training_service;
 pub mod tuition_service;
 pub mod user_service;
+--- use_cases/src/request_service/err.rs ---
+use thiserror::Error;
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Database error: {0}")]
+    UnknownDatabaseError(String),
+    #[error("Request not found")]
+    RequestNotFound,
+    #[error("Request already completed")]
+    RequestAlreadyCompleted,
+    #[error("Cannot approve/reject your own request")]
+    SelfApprovalNotAllowed,
+    #[error("Invalid approver ID")]
+    InvalidApprover,
+}
+--- use_cases/src/request_service/mod.rs ---
+pub mod err;
+pub mod repository_trait;
+
+use self::err::{Error, Result};
+use entities::request::Request;
+use repository_trait::RequestRepository;
+use std::sync::Arc;
+use uuid::Uuid;
+
+#[derive(Clone)]
+pub struct RequestService {
+    request_repo: Arc<dyn RequestRepository + Send + Sync>,
+}
+
+impl RequestService {
+    pub fn new(request_repo: Arc<dyn RequestRepository + Send + Sync>) -> Self {
+        Self { request_repo }
+    }
+
+    pub async fn create_request(
+        &self,
+        requester_id: Uuid,
+        requested_command: String,
+        justification: String,
+    ) -> Result<()> {
+        let request = Request {
+            id: Uuid::new_v4(),
+            requester_id,
+            requested_command,
+            justification,
+            approved: None,
+            approver_id: None,
+        };
+
+        self.request_repo.create_request(&request).await
+    }
+
+    pub async fn complete_request(
+        &self,
+        request_id: Uuid,
+        approver_id: Uuid,
+        approved: bool,
+    ) -> Result<()> {
+        let mut request = self
+            .request_repo
+            .get_request_by_id(request_id)
+            .await?
+            .ok_or(Error::RequestNotFound)?;
+
+        if request.requester_id == approver_id {
+            return Err(Error::SelfApprovalNotAllowed);
+        }
+
+        if request.approved.is_some() {
+            return Err(Error::RequestAlreadyCompleted);
+        }
+
+        request.approved = Some(approved);
+        request.approver_id = Some(approver_id);
+
+        self.request_repo.update_request(&request).await
+    }
+
+    pub async fn list_requests(&self) -> Result<Vec<Request>> {
+        self.request_repo.list_requests().await
+    }
+
+    pub async fn list_user_requests(&self, user_id: Uuid) -> Result<Vec<Request>> {
+        self.request_repo.list_requests_by_user(user_id).await
+    }
+
+    pub async fn get_request_by_id(&self, id: Uuid) -> Result<Option<Request>> {
+        self.request_repo.get_request_by_id(id).await
+    }
+}
+--- use_cases/src/request_service/repository_trait.rs ---
+use super::err::Result;
+use async_trait::async_trait;
+use entities::request::Request;
+use uuid::Uuid;
+
+#[async_trait]
+pub trait RequestRepository: Send + Sync {
+    async fn create_request(&self, request: &Request) -> Result<()>;
+    async fn get_request_by_id(&self, id: Uuid) -> Result<Option<Request>>;
+    async fn update_request(&self, request: &Request) -> Result<()>;
+    async fn list_requests(&self) -> Result<Vec<Request>>;
+    async fn list_requests_by_user(&self, user_id: Uuid) -> Result<Vec<Request>>;
+}
 --- use_cases/src/tournament_service/err.rs ---
 use thiserror::Error;
+
+use crate::category_service;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -3373,10 +4681,16 @@ pub enum Error {
     PositionAlreadyTaken,
     #[error("User did not attend tournament")]
     UserDidNotAttend,
+    #[error("User does not meet tournament category requirements")]
+    UserDoesNotMeetCategoryRequirements,
+    #[error("Category Service Error")]
+    CategoryServiceError(#[from] category_service::err::Error),
 }
 --- use_cases/src/tournament_service/mod.rs ---
 pub mod err;
 pub mod repository_trait;
+
+use crate::category_service::{repository_trait::UserCategoryRepository, CategoryService};
 
 use self::err::{Error, Result};
 use entities::tournament::{
@@ -3393,6 +4707,7 @@ pub struct TournamentService {
     tournament_repo: Arc<dyn TournamentRepository + Send + Sync>,
     registration_repo: Arc<dyn TournamentRegistrationRepository + Send + Sync>,
     attendance_repo: Arc<dyn TournamentAttendanceRepository + Send + Sync>,
+    category_service: CategoryService,
 }
 
 impl TournamentService {
@@ -3400,11 +4715,13 @@ impl TournamentService {
         tournament_repo: Arc<dyn TournamentRepository + Send + Sync>,
         registration_repo: Arc<dyn TournamentRegistrationRepository + Send + Sync>,
         attendance_repo: Arc<dyn TournamentAttendanceRepository + Send + Sync>,
+        category_service: CategoryService,
     ) -> Self {
         Self {
             tournament_repo,
             registration_repo,
             attendance_repo,
+            category_service,
         }
     }
 
@@ -3425,16 +4742,13 @@ impl TournamentService {
             .get_tournament_by_id(id)
             .await?
             .ok_or(Error::TournamentNotFound)
-            .map(|t| t.into())
     }
 
     pub async fn update_tournament(&self, tournament: Tournament) -> Result<()> {
-        // Validate dates
         if tournament.start_datetime >= tournament.end_datetime {
             return Err(Error::InvalidDates);
         }
 
-        // Check if tournament exists
         if self
             .tournament_repo
             .get_tournament_by_id(tournament.id_tournament)
@@ -3458,7 +4772,6 @@ impl TournamentService {
     }
 
     pub async fn delete_tournament(&self, id: Uuid) -> Result<()> {
-        // Check if tournament exists
         if self
             .tournament_repo
             .get_tournament_by_id(id)
@@ -3476,21 +4789,24 @@ impl TournamentService {
     pub async fn list_tournaments(&self) -> Result<Vec<Tournament>> {
         let tournaments = self.tournament_repo.list_tournaments().await?;
 
-        Ok(tournaments.into_iter().map(|t| t.into()).collect())
+        Ok(tournaments)
     }
 
     pub async fn register_user(&self, registration: TournamentRegistration) -> Result<()> {
-        // Check if tournament exists
-        if self
+        let tournament = self
             .tournament_repo
             .get_tournament_by_id(registration.id_tournament)
             .await?
-            .is_none()
+            .ok_or(Error::TournamentNotFound)?;
+
+        if !self
+            .category_service
+            .user_has_category(registration.id_user, tournament.id_category)
+            .await?
         {
-            return Err(Error::TournamentNotFound);
+            return Err(Error::UserDoesNotMeetCategoryRequirements);
         }
 
-        // Check if user is already registered
         let registrations = self
             .registration_repo
             .get_tournament_registrations(registration.id_tournament)
@@ -3514,7 +4830,6 @@ impl TournamentService {
     }
 
     pub async fn record_attendance(&self, attendance: TournamentAttendance) -> Result<()> {
-        // Check if tournament exists
         if self
             .tournament_repo
             .get_tournament_by_id(attendance.id_tournament)
@@ -3524,7 +4839,6 @@ impl TournamentService {
             return Err(Error::TournamentNotFound);
         }
 
-        // Check if user is registered
         let registrations = self
             .registration_repo
             .get_tournament_registrations(attendance.id_tournament)
@@ -3554,7 +4868,6 @@ impl TournamentService {
         user_id: Uuid,
         position: i32,
     ) -> Result<()> {
-        // Check if tournament exists
         if self
             .tournament_repo
             .get_tournament_by_id(tournament_id)
@@ -3564,7 +4877,6 @@ impl TournamentService {
             return Err(Error::TournamentNotFound);
         }
 
-        // Check if user attended
         let attendance = self
             .attendance_repo
             .get_tournament_attendance(tournament_id)
@@ -3577,7 +4889,6 @@ impl TournamentService {
             return Err(Error::PositionAlreadyTaken);
         }
 
-        // Validate position
         if position < 1 {
             return Err(Error::NegativePosition);
         }
@@ -3587,6 +4898,23 @@ impl TournamentService {
             .await?;
 
         Ok(())
+    }
+
+    pub async fn get_eligible_tournaments(&self, user_id: Uuid) -> Result<Vec<Tournament>> {
+        let all_tournaments = self.tournament_repo.list_tournaments().await?;
+
+        let user_categories = self.category_service.get_user_categories(user_id).await?;
+        let user_category_ids: Vec<Uuid> = user_categories
+            .into_iter()
+            .map(|uc| uc.id_category)
+            .collect();
+
+        let eligible_tournaments = all_tournaments
+            .into_iter()
+            .filter(|t| user_category_ids.contains(&t.id_category))
+            .collect();
+
+        Ok(eligible_tournaments)
     }
 }
 --- use_cases/src/tournament_service/repository_trait.rs ---
@@ -3638,12 +4966,186 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("Unknow error in the database")]
+    #[error("Unknown error in the database: {0}")]
     UnknownDatabaseError(String),
+
+    #[error("Training not found")]
+    TrainingNotFound,
+
+    #[error("User already registered for this training")]
+    UserAlreadyRegistered,
+
+    #[error("User does not meet category requirements")]
+    UserDoesNotMeetCategoryRequirements,
+
+    #[error("Invalid dates: start date must be before end date")]
+    InvalidDates,
+
+    #[error("User not registered for this training")]
+    UserNotRegistered,
+
+    #[error("Training registration not found")]
+    RegistrationNotFound,
+
+    #[error("Error in category service")]
+    CategoryServiceError(#[from] crate::category_service::err::Error),
 }
 --- use_cases/src/training_service/mod.rs ---
 pub mod err;
 pub mod repository_trait;
+
+use err::{Error, Result};
+use repository_trait::{TrainingRegistrationRepository, TrainingRepository};
+
+use crate::category_service::CategoryService;
+use entities::training::{Training, TrainingRegistration};
+use std::sync::Arc;
+use uuid::Uuid;
+
+#[derive(Clone)]
+pub struct TrainingService {
+    training_repo: Arc<dyn TrainingRepository + Send + Sync>,
+    registration_repo: Arc<dyn TrainingRegistrationRepository + Send + Sync>,
+    category_service: CategoryService,
+}
+
+impl TrainingService {
+    pub fn new(
+        training_repo: Arc<dyn TrainingRepository + Send + Sync>,
+        registration_repo: Arc<dyn TrainingRegistrationRepository + Send + Sync>,
+        category_service: CategoryService,
+    ) -> Self {
+        Self {
+            training_repo,
+            registration_repo,
+            category_service,
+        }
+    }
+
+    pub async fn create_training(&self, training: &Training) -> Result<()> {
+        if training.start_datetime >= training.end_datetime {
+            return Err(Error::InvalidDates);
+        }
+
+        self.training_repo.create_training(training).await
+    }
+
+    pub async fn get_training(&self, id: Uuid) -> Result<Training> {
+        self.training_repo
+            .get_training_by_id(id)
+            .await?
+            .ok_or(Error::TrainingNotFound)
+    }
+
+    pub async fn update_training(&self, training: &Training) -> Result<()> {
+        if training.start_datetime >= training.end_datetime {
+            return Err(Error::InvalidDates);
+        }
+
+        if self
+            .training_repo
+            .get_training_by_id(training.id_training)
+            .await?
+            .is_none()
+        {
+            return Err(Error::TrainingNotFound);
+        }
+
+        self.training_repo.update_training(training).await
+    }
+
+    pub async fn delete_training(&self, id: Uuid) -> Result<()> {
+        if self.training_repo.get_training_by_id(id).await?.is_none() {
+            return Err(Error::TrainingNotFound);
+        }
+
+        self.training_repo.delete_training(id).await
+    }
+
+    pub async fn list_trainings(&self) -> Result<Vec<Training>> {
+        self.training_repo.list_trainings().await
+    }
+
+    pub async fn register_user(&self, registration: TrainingRegistration) -> Result<()> {
+        let training = self
+            .training_repo
+            .get_training_by_id(registration.id_training)
+            .await?
+            .ok_or(Error::TrainingNotFound)?;
+
+        // Check if user has the required category
+        if !self
+            .category_service
+            .user_has_category(registration.id_user, training.id_category)
+            .await?
+        {
+            return Err(Error::UserDoesNotMeetCategoryRequirements);
+        }
+
+        // Check if user is already registered
+        let registrations = self
+            .registration_repo
+            .get_training_registrations(registration.id_training)
+            .await?;
+        if registrations
+            .iter()
+            .any(|r| r.id_user == registration.id_user)
+        {
+            return Err(Error::UserAlreadyRegistered);
+        }
+
+        self.registration_repo
+            .register_user_for_training(&registration)
+            .await
+    }
+
+    pub async fn mark_attendance(
+        &self,
+        training_id: Uuid,
+        user_id: Uuid,
+        attended: bool,
+    ) -> Result<()> {
+        // Check if training exists
+        if self
+            .training_repo
+            .get_training_by_id(training_id)
+            .await?
+            .is_none()
+        {
+            return Err(Error::TrainingNotFound);
+        }
+
+        // Check if user is registered
+        let registrations = self
+            .registration_repo
+            .get_training_registrations(training_id)
+            .await?;
+        if !registrations.iter().any(|r| r.id_user == user_id) {
+            return Err(Error::UserNotRegistered);
+        }
+
+        self.registration_repo
+            .mark_training_attendance(training_id, user_id, attended)
+            .await
+    }
+
+    pub async fn get_eligible_trainings(&self, user_id: Uuid) -> Result<Vec<Training>> {
+        let all_trainings = self.training_repo.list_trainings().await?;
+
+        let user_categories = self.category_service.get_user_categories(user_id).await?;
+        let user_category_ids: Vec<Uuid> = user_categories
+            .into_iter()
+            .map(|uc| uc.id_category)
+            .collect();
+
+        let eligible_trainings = all_trainings
+            .into_iter()
+            .filter(|training| user_category_ids.contains(&training.id_category))
+            .collect();
+
+        Ok(eligible_trainings)
+    }
+}
 --- use_cases/src/training_service/repository_trait.rs ---
 use super::err::Result;
 use async_trait::async_trait;
@@ -3682,23 +5184,86 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("Unknow error in the database")]
-    UnknownDatabaseError(#[from] Box<dyn std::error::Error>),
+    #[error("Database error: {0}")]
+    UnknownDatabaseError(String),
+    #[error("Active tuition already exists")]
+    ActiveTuitionExists,
+    #[error("Invalid payment amount")]
+    InvalidAmount,
+    #[error("Tuition not found")]
+    TuitionNotFound,
 }
 --- use_cases/src/tuition_service/mod.rs ---
 pub mod err;
 pub mod repository_trait;
+mod tests;
+
+use self::err::{Error, Result};
+use chrono::Utc;
+use entities::tuition::Tuition;
+use repository_trait::TuitionRepository;
+use std::sync::Arc;
+use uuid::Uuid;
+
+#[derive(Clone)]
+pub struct TuitionService {
+    tuition_repo: Arc<dyn TuitionRepository + Send + Sync>,
+}
+
+impl TuitionService {
+    pub fn new(tuition_repo: Arc<dyn TuitionRepository + Send + Sync>) -> Self {
+        Self { tuition_repo }
+    }
+
+    pub async fn pay_tuition(&self, user_id: Uuid, amount: f64) -> Result<()> {
+        if amount <= 0.0 {
+            return Err(Error::InvalidAmount);
+        }
+
+        if self.tuition_repo.has_active_tuition(user_id).await? {
+            return Err(Error::ActiveTuitionExists);
+        }
+
+        let new_tuition = Tuition {
+            id_tuition: Uuid::new_v4(),
+            id_user: user_id,
+            amount,
+            payment_date: Utc::now().naive_utc(),
+        };
+
+        self.tuition_repo.record_tuition_payment(&new_tuition).await
+    }
+
+    pub async fn has_active_tuition(&self, user_id: Uuid) -> Result<bool> {
+        self.tuition_repo.has_active_tuition(user_id).await
+    }
+
+    pub async fn get_user_tuitions(&self, user_id: Uuid) -> Result<Vec<Tuition>> {
+        self.tuition_repo
+            .list_tuition_payments_for_user(user_id)
+            .await
+    }
+
+    pub async fn get_all_tuitions(&self) -> Result<Vec<Tuition>> {
+        self.tuition_repo.list_all_tuition_payments().await
+    }
+}
 --- use_cases/src/tuition_service/repository_trait.rs ---
 use super::err::Result;
+use async_trait::async_trait;
 use entities::tuition::Tuition;
 use uuid::Uuid;
 
-pub trait TuitionRepository {
-    fn record_tuition_payment(&self, tuition: &Tuition) -> Result<()>;
-    fn get_tuition_by_id(&self, id: Uuid) -> Result<Option<Tuition>>;
-    fn list_tuition_payments_for_user(&self, user_id: Uuid) -> Result<Vec<Tuition>>;
-    fn list_all_tuition_payments(&self) -> Result<Vec<Tuition>>;
+#[async_trait]
+pub trait TuitionRepository: Send + Sync {
+    async fn record_tuition_payment(&self, tuition: &Tuition) -> Result<()>;
+    async fn get_tuition_by_id(&self, id: Uuid) -> Result<Option<Tuition>>;
+    async fn list_tuition_payments_for_user(&self, user_id: Uuid) -> Result<Vec<Tuition>>;
+    async fn list_all_tuition_payments(&self) -> Result<Vec<Tuition>>;
+    async fn has_active_tuition(&self, user_id: Uuid) -> Result<bool>;
 }
+--- use_cases/src/tuition_service/tests.rs ---
+
 --- use_cases/src/user_service/err.rs ---
 use std::sync::Arc;
 

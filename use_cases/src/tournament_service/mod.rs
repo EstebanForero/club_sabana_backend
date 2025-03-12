@@ -1,7 +1,7 @@
 pub mod err;
 pub mod repository_trait;
 
-use crate::category_service::{repository_trait::UserCategoryRepository, CategoryService};
+use crate::category_service::CategoryService;
 
 use self::err::{Error, Result};
 use entities::tournament::{

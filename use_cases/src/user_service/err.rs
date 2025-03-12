@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -8,7 +8,7 @@ use repository_trait::{CategoryRepository, CategoryRequirementRepository, UserCa
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::user_service::{repository_trait::UserRepository, UserService};
+use crate::user_service::UserService;
 
 pub mod err;
 pub mod repository_trait;
