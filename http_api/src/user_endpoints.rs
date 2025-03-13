@@ -56,8 +56,6 @@ async fn get_user_by_id(
 }
 
 async fn alive() -> Result<Json<String>, Response> {
-    "The user router is alive";
-
     Ok(Json("I am alive".to_string()))
 
     // Example Error Err((StatusCode::INTERNAL_SERVER_ERROR, error_message))

@@ -13,7 +13,7 @@ turso_db = { path = "../turso_db" }
 serde = { version = "1.0.217", features = ["derive"] }
 dotenvy = "0.15.7"
 envy = "0.4.2"
-tower-http = { version = "0.6.2", features = ["cors"] }
+tower-http = { version = "0.6.2", features = ["cors", "trace", "tracing"] }
 bcrypt_hasher = { path = "../bcrypt_hasher" }
 jsonwebtoken = "9.3.1"
 chrono = "0.4.39"

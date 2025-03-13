@@ -7,6 +7,7 @@ use axum::Router;
 use request_endpoints::request_router;
 use serde::Deserialize;
 use tower_http::cors::CorsLayer;
+use tower_http::trace::TraceLayer;
 use tracing::{error, info};
 use training_endpoints::training_router;
 use tuition_endpoints::tuition_router;
@@ -86,7 +87,9 @@ async fn main() {
 
     let cors_layer = CorsLayer::permissive();
 
-    main_router = main_router.layer(cors_layer);
+    main_router = main_router
+        .layer(cors_layer)
+        .layer(TraceLayer::new_for_http());
 
     let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), config.port);
 
