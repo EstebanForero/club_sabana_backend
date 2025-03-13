@@ -64,6 +64,7 @@ async fn alive() -> Result<Json<String>, Response> {
 #[derive(Deserialize, Serialize, Clone, Debug)]
 struct LogInResponse {
     token: String,
+    user_id: Uuid,
     user_rol: URol,
 }
 
@@ -80,6 +81,7 @@ async fn log_in_user(
 
     Ok(Json(LogInResponse {
         token,
+        user_id: log_in_response.user_id,
         user_rol: log_in_response.user_rol,
     }))
 }
