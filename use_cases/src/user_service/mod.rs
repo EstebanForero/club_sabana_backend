@@ -111,7 +111,7 @@ impl UserService {
 
         Ok(LogInResponse {
             user_id,
-            user_rol: URol::ADMIN,
+            user_rol: user_info.user_rol,
         })
     }
 }
