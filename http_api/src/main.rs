@@ -1,9 +1,18 @@
 use std::{
+    future::Future,
     net::{Ipv4Addr, SocketAddrV4},
     sync::Arc,
 };
 
-use axum::Router;
+use auth::auth_middleware;
+use axum::{
+    body::Body,
+    extract::{Request, State},
+    http::StatusCode,
+    middleware::{self, FromFnLayer, Next},
+    response::IntoResponse,
+    Router,
+};
 use request_endpoints::request_router;
 use serde::Deserialize;
 use tower_http::cors::CorsLayer;
@@ -83,7 +92,7 @@ async fn main() {
         .merge(category_endpoints::category_router(category_service))
         .merge(training_router(training_service))
         .merge(request_router(request_service))
-        .merge(tuition_router(tuition_service));
+        .merge(tuition_router(tuition_service, config.token_key));
 
     let cors_layer = CorsLayer::permissive();
 

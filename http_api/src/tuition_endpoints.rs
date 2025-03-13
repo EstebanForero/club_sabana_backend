@@ -1,6 +1,7 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
+    middleware,
     response::IntoResponse,
     routing::{get, post},
     Extension, Json, Router,
@@ -11,15 +12,19 @@ use use_cases::tuition_service::{err::Error, TuitionService};
 use uuid::Uuid;
 
 use super::err::{HttpError, ToErrResponse};
-use crate::{auth::UserInfoAuth, err::HttpResult};
+use crate::{
+    auth::{auth_middleware, UserInfoAuth},
+    err::HttpResult,
+};
 
-pub fn tuition_router(tuition_service: TuitionService) -> Router {
+pub fn tuition_router(tuition_service: TuitionService, jwt_key: String) -> Router {
     Router::new()
         .route("/health-tuition", get(alive))
         .route("/tuitions/pay/{amount}", post(pay_tuition))
         .route("/tuitions", get(list_tuitions))
         .route("/tuitions/{user_id}", get(list_user_tuitions))
         .route("/tuitions/active/{user_id}", get(has_active_tuition))
+        .layer(middleware::from_fn_with_state(jwt_key, auth_middleware))
         .with_state(tuition_service)
 }
 
