@@ -6,7 +6,7 @@ use axum::{
     Json, Router,
 };
 use entities::{
-    category::{Category, CategoryRequirement},
+    category::{Category, CategoryCreation, CategoryRequirement},
     user::UserCategory,
 };
 use tracing::error;
@@ -43,7 +43,7 @@ async fn alive() -> &'static str {
 
 async fn create_category(
     State(category_service): State<CategoryService>,
-    Json(category): Json<Category>,
+    Json(category): Json<CategoryCreation>,
 ) -> HttpResult<impl IntoResponse> {
     category_service
         .add_category(category)

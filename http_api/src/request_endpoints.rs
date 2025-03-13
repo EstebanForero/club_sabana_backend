@@ -5,7 +5,7 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
-use entities::request::Request;
+use entities::request::{Request, RequestCreation};
 use tracing::error;
 use use_cases::request_service::{err::Error, RequestService};
 use uuid::Uuid;
@@ -29,7 +29,7 @@ async fn alive() -> &'static str {
 
 async fn create_request(
     State(request_service): State<RequestService>,
-    Json(request): Json<Request>,
+    Json(request): Json<RequestCreation>,
 ) -> HttpResult<impl IntoResponse> {
     request_service
         .create_request(

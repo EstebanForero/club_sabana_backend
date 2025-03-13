@@ -5,7 +5,7 @@ use err::{Error, Result};
 use repository_trait::{TrainingRegistrationRepository, TrainingRepository};
 
 use crate::category_service::CategoryService;
-use entities::training::{Training, TrainingRegistration};
+use entities::training::{Training, TrainingCreation, TrainingRegistration};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -29,12 +29,14 @@ impl TrainingService {
         }
     }
 
-    pub async fn create_training(&self, training: &Training) -> Result<()> {
-        if training.start_datetime >= training.end_datetime {
+    pub async fn create_training(&self, training_creation: &TrainingCreation) -> Result<()> {
+        if training_creation.start_datetime >= training_creation.end_datetime {
             return Err(Error::InvalidDates);
         }
 
-        self.training_repo.create_training(training).await
+        let training = training_creation.to_training_cloned(Uuid::new_v4());
+
+        self.training_repo.create_training(&training).await
     }
 
     pub async fn get_training(&self, id: Uuid) -> Result<Training> {

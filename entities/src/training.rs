@@ -1,9 +1,15 @@
 use super::datetime_serde;
 use chrono::NaiveDateTime;
+use partial_struct::Partial;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Partial)]
+#[partial(
+    "TrainingCreation",
+    derive(Debug, Serialize, Deserialize),
+    omit(id_training)
+)]
 pub struct Training {
     pub id_training: Uuid,
     pub name: String,

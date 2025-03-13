@@ -1,6 +1,6 @@
 use chrono::Utc;
 use entities::{
-    category::{Category, CategoryRequirement, LevelName},
+    category::{Category, CategoryCreation, CategoryRequirement, LevelName},
     user::UserCategory,
 };
 use err::{Error, Result};
@@ -78,15 +78,17 @@ impl CategoryService {
         self.category_repo.list_categories().await
     }
 
-    pub async fn add_category(&self, category: Category) -> Result<()> {
+    pub async fn add_category(&self, category_creation: CategoryCreation) -> Result<()> {
         if self
             .category_repo
-            .get_category_by_name(&category.name)
+            .get_category_by_name(&category_creation.name)
             .await?
             .is_some()
         {
             return Err(Error::CategoryAlreadyExists);
         }
+
+        let category = category_creation.to_category(Uuid::new_v4());
 
         self.category_repo.create_category(&category).await?;
 

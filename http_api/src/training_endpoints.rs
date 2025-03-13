@@ -5,7 +5,7 @@ use axum::{
     routing::{get, post, put},
     Json, Router,
 };
-use entities::training::{Training, TrainingRegistration};
+use entities::training::{Training, TrainingCreation, TrainingRegistration};
 use tracing::error;
 use use_cases::training_service::{err::Error, TrainingService};
 use uuid::Uuid;
@@ -37,7 +37,7 @@ async fn alive() -> &'static str {
 
 async fn create_training(
     State(training_service): State<TrainingService>,
-    Json(training): Json<Training>,
+    Json(training): Json<TrainingCreation>,
 ) -> HttpResult<impl IntoResponse> {
     training_service
         .create_training(&training)
