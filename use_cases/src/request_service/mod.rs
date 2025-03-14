@@ -24,7 +24,7 @@ impl RequestService {
         justification: String,
     ) -> Result<()> {
         let request = Request {
-            id: Uuid::new_v4(),
+            request_id: Uuid::new_v4(),
             requester_id,
             requested_command,
             justification,

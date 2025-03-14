@@ -75,8 +75,6 @@ pub async fn auth_middleware(
         _ => return Err(StatusCode::UNAUTHORIZED),
     };
 
-    info!("The token is: |{jwt_token_string}|");
-
     let claims = decode_jwt(&jwt_secret, jwt_token_string).map_err(|err| {
         error!("Error in token verification: {err}");
         StatusCode::UNAUTHORIZED

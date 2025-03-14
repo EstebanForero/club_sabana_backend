@@ -6,10 +6,10 @@ use uuid::Uuid;
 #[partial(
     "RequestCreation",
     derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq),
-    omit(id, approved, approver_id)
+    omit(request_id, approved, approver_id)
 )]
 pub struct Request {
-    pub id: Uuid,
+    pub request_id: Uuid,
     pub requester_id: Uuid,
     pub requested_command: String,
     pub justification: String,

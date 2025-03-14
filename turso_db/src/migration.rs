@@ -140,12 +140,12 @@ CREATE TABLE tuition (
 );
 
 -- 14) request_for_approval (new table)
-CREATE TABLE request_for_approval (
+CREATE TABLE request (
     request_id         TEXT PRIMARY KEY,
     requester_id       TEXT NOT NULL,
     requested_command  TEXT NOT NULL,
     justification      TEXT NOT NULL,
-    approved           INTEGER NOT NULL,  -- Bool stored as INTEGER (0 = false, 1 = true)
+    approved           INTEGER,  -- Bool stored as INTEGER (0 = false, 1 = true)
     approver_id        TEXT,             -- Nullable, as approval may be pending
     deleted            INTEGER NOT NULL DEFAULT 0,  -- Added for consistency
     FOREIGN KEY (requester_id) REFERENCES person(id_user),

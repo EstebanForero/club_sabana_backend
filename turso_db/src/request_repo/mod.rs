@@ -12,10 +12,10 @@ impl RequestRepository for TursoDb {
     async fn create_request(&self, request: &Request) -> Result<()> {
         self.execute_with_error(
             "INSERT INTO request (
-                id, requester_id, requested_command, justification, approved, approver_id
+                request_id, requester_id, requested_command, justification, approved, approver_id
             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
-                request.id.to_string(),
+                request.request_id.to_string(),
                 request.requester_id.to_string(),
                 request.requested_command.clone(),
                 request.justification.clone(),
@@ -29,9 +29,9 @@ impl RequestRepository for TursoDb {
 
     async fn get_request_by_id(&self, id: Uuid) -> Result<Option<Request>> {
         self.query_one_with_error(
-            "SELECT id, requester_id, requested_command, justification, approved, approver_id 
+            "SELECT request_id, requester_id, requested_command, justification, approved, approver_id 
              FROM request 
-             WHERE id = ?1",
+             WHERE request_id = ?1",
             params![id.to_string()],
             Error::UnknownDatabaseError,
         )
@@ -46,14 +46,14 @@ impl RequestRepository for TursoDb {
                 justification = ?3, 
                 approved = ?4, 
                 approver_id = ?5
-             WHERE id = ?6",
+             WHERE request_id = ?6",
             params![
                 request.requester_id.to_string(),
                 request.requested_command.clone(),
                 request.justification.clone(),
                 request.approved,
                 request.approver_id.map(|id| id.to_string()),
-                request.id.to_string()
+                request.request_id.to_string()
             ],
             Error::UnknownDatabaseError,
         )
@@ -62,7 +62,7 @@ impl RequestRepository for TursoDb {
 
     async fn list_requests(&self) -> Result<Vec<Request>> {
         self.query_many_with_error(
-            "SELECT id, requester_id, requested_command, justification, approved, approver_id 
+            "SELECT request_id, requester_id, requested_command, justification, approved, approver_id 
              FROM request",
             params![],
             Error::UnknownDatabaseError,
@@ -72,7 +72,7 @@ impl RequestRepository for TursoDb {
 
     async fn list_requests_by_user(&self, user_id: Uuid) -> Result<Vec<Request>> {
         self.query_many_with_error(
-            "SELECT id, requester_id, requested_command, justification, approved, approver_id 
+            "SELECT request_id, requester_id, requested_command, justification, approved, approver_id 
              FROM request 
              WHERE requester_id = ?1",
             params![user_id.to_string()],
@@ -101,21 +101,6 @@ mod test {
             .await
             .build();
 
-        // Create test requests table
-        let conn = db.get_connection().await.expect("Failed to get connection");
-        conn.execute_batch(
-            "CREATE TABLE request (
-                id TEXT PRIMARY KEY,
-                requester_id TEXT NOT NULL,
-                requested_command TEXT NOT NULL,
-                justification TEXT NOT NULL,
-                approved INTEGER,
-                approver_id TEXT
-            );",
-        )
-        .await
-        .expect("Failed to create test requests table");
-
         db
     }
 
@@ -126,8 +111,12 @@ mod test {
         let request_id = Uuid::new_v4();
         let requester_id = Uuid::new_v4();
 
+        db.create_test_user(requester_id)
+            .await
+            .expect("Error creating test user");
+
         let request = Request {
-            id: request_id,
+            request_id,
             requester_id,
             requested_command: "Test Command".to_string(),
             justification: "Test Justification".to_string(),
@@ -156,8 +145,16 @@ mod test {
         let requester_id = Uuid::new_v4();
         let approver_id = Uuid::new_v4();
 
+        db.create_test_user(requester_id)
+            .await
+            .expect("Error creating test user");
+
+        db.create_test_user(approver_id)
+            .await
+            .expect("Error creating test user");
+
         let mut request = Request {
-            id: request_id,
+            request_id,
             requester_id,
             requested_command: "Test Command".to_string(),
             justification: "Test Justification".to_string(),
@@ -192,10 +189,14 @@ mod test {
         let db = repository.await;
         let requester_id = Uuid::new_v4();
 
+        db.create_test_user(requester_id)
+            .await
+            .expect("Error creating test user");
+
         // Create 3 requests
         for i in 0..3 {
             let request = Request {
-                id: Uuid::new_v4(),
+                request_id: Uuid::new_v4(),
                 requester_id,
                 requested_command: format!("Command {i}"),
                 justification: format!("Justification {i}"),
@@ -220,10 +221,18 @@ mod test {
         let user1_id = Uuid::new_v4();
         let user2_id = Uuid::new_v4();
 
+        db.create_test_user(user1_id)
+            .await
+            .expect("Error creating test user");
+
+        db.create_test_user(user2_id)
+            .await
+            .expect("Error creating test user");
+
         // Create 2 requests for user1
         for i in 0..2 {
             let request = Request {
-                id: Uuid::new_v4(),
+                request_id: Uuid::new_v4(),
                 requester_id: user1_id,
                 requested_command: format!("Command {i}"),
                 justification: format!("Justification {i}"),
@@ -238,7 +247,7 @@ mod test {
 
         // Create 1 request for user2
         let request = Request {
-            id: Uuid::new_v4(),
+            request_id: Uuid::new_v4(),
             requester_id: user2_id,
             requested_command: "Command".to_string(),
             justification: "Justification".to_string(),
