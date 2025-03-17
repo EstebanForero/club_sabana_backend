@@ -1,6 +1,7 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
+    middleware,
     response::IntoResponse,
     routing::{get, post},
     Extension, Json, Router,
@@ -11,15 +12,19 @@ use use_cases::request_service::{err::Error, RequestService};
 use uuid::Uuid;
 
 use super::err::{HttpError, ToErrResponse};
-use crate::{auth::UserInfoAuth, err::HttpResult};
+use crate::{
+    auth::{auth_middleware, UserInfoAuth},
+    err::HttpResult,
+};
 
-pub fn request_router(request_service: RequestService) -> Router {
+pub fn request_router(request_service: RequestService, jwt_key: String) -> Router {
     Router::new()
         .route("/health-request", get(alive))
         .route("/requests", post(create_request).get(list_requests))
         .route("/requests/{id}", get(get_request))
         .route("/requests/{id}/complete/{approved}", post(complete_request))
         .route("/requests/user/{user_id}", get(list_user_requests))
+        .layer(middleware::from_fn_with_state(jwt_key, auth_middleware))
         .with_state(request_service)
 }
 

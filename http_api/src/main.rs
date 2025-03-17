@@ -91,7 +91,7 @@ async fn main() {
         .merge(tournament_endpoints::tournament_router(tournament_service))
         .merge(category_endpoints::category_router(category_service))
         .merge(training_router(training_service))
-        .merge(request_router(request_service))
+        .merge(request_router(request_service, config.token_key.clone()))
         .merge(tuition_router(tuition_service, config.token_key));
 
     let cors_layer = CorsLayer::permissive();

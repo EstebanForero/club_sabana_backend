@@ -236,12 +236,18 @@ pub mod training;
 pub mod tuition;
 pub mod user;
 --- entities/src/request.rs ---
+use partial_struct::Partial;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Partial)]
+#[partial(
+    "RequestCreation",
+    derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq),
+    omit(request_id, approved, approver_id)
+)]
 pub struct Request {
-    pub id: Uuid,
+    pub request_id: Uuid,
     pub requester_id: Uuid,
     pub requested_command: String,
     pub justification: String,
@@ -290,10 +296,16 @@ pub struct TournamentAttendance {
 --- entities/src/training.rs ---
 use super::datetime_serde;
 use chrono::NaiveDateTime;
+use partial_struct::Partial;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Partial)]
+#[partial(
+    "TrainingCreation",
+    derive(Debug, Serialize, Deserialize),
+    omit(id_training)
+)]
 pub struct Training {
     pub id_training: Uuid,
     pub name: String,
@@ -489,8 +501,6 @@ pub async fn auth_middleware(
         _ => return Err(StatusCode::UNAUTHORIZED),
     };
 
-    info!("The token is: |{jwt_token_string}|");
-
     let claims = decode_jwt(&jwt_secret, jwt_token_string).map_err(|err| {
         error!("Error in token verification: {err}");
         StatusCode::UNAUTHORIZED
@@ -514,7 +524,7 @@ use axum::{
     Json, Router,
 };
 use entities::{
-    category::{Category, CategoryRequirement},
+    category::{Category, CategoryCreation, CategoryRequirement},
     user::UserCategory,
 };
 use tracing::error;
@@ -551,7 +561,7 @@ async fn alive() -> &'static str {
 
 async fn create_category(
     State(category_service): State<CategoryService>,
-    Json(category): Json<Category>,
+    Json(category): Json<CategoryCreation>,
 ) -> HttpResult<impl IntoResponse> {
     category_service
         .add_category(category)
@@ -702,14 +712,24 @@ impl ToErrResponse for String {
 }
 --- http_api/src/main.rs ---
 use std::{
+    future::Future,
     net::{Ipv4Addr, SocketAddrV4},
     sync::Arc,
 };
 
-use axum::Router;
+use auth::auth_middleware;
+use axum::{
+    body::Body,
+    extract::{Request, State},
+    http::StatusCode,
+    middleware::{self, FromFnLayer, Next},
+    response::IntoResponse,
+    Router,
+};
 use request_endpoints::request_router;
 use serde::Deserialize;
 use tower_http::cors::CorsLayer;
+use tower_http::trace::TraceLayer;
 use tracing::{error, info};
 use training_endpoints::training_router;
 use tuition_endpoints::tuition_router;
@@ -785,11 +805,13 @@ async fn main() {
         .merge(category_endpoints::category_router(category_service))
         .merge(training_router(training_service))
         .merge(request_router(request_service))
-        .merge(tuition_router(tuition_service));
+        .merge(tuition_router(tuition_service, config.token_key));
 
     let cors_layer = CorsLayer::permissive();
 
-    main_router = main_router.layer(cors_layer);
+    main_router = main_router
+        .layer(cors_layer)
+        .layer(TraceLayer::new_for_http());
 
     let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), config.port);
 
@@ -807,7 +829,7 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
-use entities::request::Request;
+use entities::request::{Request, RequestCreation};
 use tracing::error;
 use use_cases::request_service::{err::Error, RequestService};
 use uuid::Uuid;
@@ -831,7 +853,7 @@ async fn alive() -> &'static str {
 
 async fn create_request(
     State(request_service): State<RequestService>,
-    Json(request): Json<Request>,
+    Json(request): Json<RequestCreation>,
 ) -> HttpResult<impl IntoResponse> {
     request_service
         .create_request(
@@ -1100,7 +1122,7 @@ use axum::{
     routing::{get, post, put},
     Json, Router,
 };
-use entities::training::{Training, TrainingRegistration};
+use entities::training::{Training, TrainingCreation, TrainingRegistration};
 use tracing::error;
 use use_cases::training_service::{err::Error, TrainingService};
 use uuid::Uuid;
@@ -1112,14 +1134,17 @@ pub fn training_router(training_service: TrainingService) -> Router {
         .route("/health-training", get(alive))
         .route("/trainings", post(create_training).get(list_trainings))
         .route(
-            "/trainings/:id",
+            "/trainings/{id}",
             get(get_training)
                 .put(update_training)
                 .delete(delete_training),
         )
-        .route("/trainings/:id/register", post(register_user))
-        .route("/trainings/:id/attendance", post(mark_attendance))
-        .route("/users/:id/eligible-trainings", get(get_eligible_trainings))
+        .route("/trainings/{id}/register", post(register_user))
+        .route("/trainings/{id}/attendance", post(mark_attendance))
+        .route(
+            "/users/{id}/eligible-trainings",
+            get(get_eligible_trainings),
+        )
         .with_state(training_service)
 }
 
@@ -1129,7 +1154,7 @@ async fn alive() -> &'static str {
 
 async fn create_training(
     State(training_service): State<TrainingService>,
-    Json(training): Json<Training>,
+    Json(training): Json<TrainingCreation>,
 ) -> HttpResult<impl IntoResponse> {
     training_service
         .create_training(&training)
@@ -1250,6 +1275,7 @@ impl<T> HttpError<T> for use_cases::training_service::err::Result<T> {
 use axum::{
     extract::{Path, State},
     http::StatusCode,
+    middleware,
     response::IntoResponse,
     routing::{get, post},
     Extension, Json, Router,
@@ -1260,15 +1286,19 @@ use use_cases::tuition_service::{err::Error, TuitionService};
 use uuid::Uuid;
 
 use super::err::{HttpError, ToErrResponse};
-use crate::{auth::UserInfoAuth, err::HttpResult};
+use crate::{
+    auth::{auth_middleware, UserInfoAuth},
+    err::HttpResult,
+};
 
-pub fn tuition_router(tuition_service: TuitionService) -> Router {
+pub fn tuition_router(tuition_service: TuitionService, jwt_key: String) -> Router {
     Router::new()
         .route("/health-tuition", get(alive))
         .route("/tuitions/pay/{amount}", post(pay_tuition))
         .route("/tuitions", get(list_tuitions))
         .route("/tuitions/{user_id}", get(list_user_tuitions))
         .route("/tuitions/active/{user_id}", get(has_active_tuition))
+        .layer(middleware::from_fn_with_state(jwt_key, auth_middleware))
         .with_state(tuition_service)
 }
 
@@ -1345,7 +1375,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{get, post, put},
     Json, Router,
 };
 
@@ -1372,6 +1402,7 @@ pub fn user_router(user_service: UserService, token_key: &str) -> Router {
         .route("/logIn", post(log_in_user))
         .route("/users", get(get_all_users))
         .route("/users/{id}", get(get_user_by_id))
+        .route("/update/{id}", put(update_user))
         .with_state((user_service, token_key.to_string()))
 }
 
@@ -1385,7 +1416,6 @@ async fn get_all_users(
 
     Ok(Json(users))
 }
-
 async fn get_user_by_id(
     State((user_service, _)): State<(UserService, String)>,
     Path(user_id): Path<Uuid>,
@@ -1398,9 +1428,20 @@ async fn get_user_by_id(
     Ok(Json(user))
 }
 
-async fn alive() -> Result<Json<String>, Response> {
-    "The user router is alive";
+async fn update_user(
+    State((user_service, _)): State<(UserService, String)>,
+    Path(user_id): Path<Uuid>,
+    Json(user_update): Json<UserCreation>,
+) -> HttpResult<impl IntoResponse> {
+    user_service
+        .update_user(user_id, user_update)
+        .await
+        .http_err("update user")?;
 
+    Ok((StatusCode::OK, "User updated successfully"))
+}
+
+async fn alive() -> Result<Json<String>, Response> {
     Ok(Json("I am alive".to_string()))
 
     // Example Error Err((StatusCode::INTERNAL_SERVER_ERROR, error_message))
@@ -1409,6 +1450,7 @@ async fn alive() -> Result<Json<String>, Response> {
 #[derive(Deserialize, Serialize, Clone, Debug)]
 struct LogInResponse {
     token: String,
+    user_id: Uuid,
     user_rol: URol,
 }
 
@@ -1425,29 +1467,10 @@ async fn log_in_user(
 
     Ok(Json(LogInResponse {
         token,
+        user_id: log_in_response.user_id,
         user_rol: log_in_response.user_rol,
     }))
 }
-
-//async fn log_in_user(
-//    State((user_service, token_key)): State<(UserService, String)>,
-//    Json(user_log_in_info): Json<UserLogInInfo>,
-//) -> Result<Json<LogInResponse>, Response> {
-//    let log_in_response = user_service
-//        .log_in_user(&user_log_in_info)
-//        .await
-//        .map_err(|err| internal_error_response(&message_from_err(err, "log in user")))?;
-//
-//    let token = generate_jwt(&log_in_response, &token_key).map_err(|err| {
-//        error!("Error log in user, generating jwt: {}", err.to_string());
-//        internal_error_response("Internal error generating token")
-//    })?;
-//
-//    Ok(Json(LogInResponse {
-//        token,
-//        user_rol: log_in_response.user_rol,
-//    }))
-//}
 
 async fn register_user(
     State((user_service, _)): State<(UserService, String)>,
@@ -1460,20 +1483,6 @@ async fn register_user(
 
     Ok((StatusCode::OK, "User added succesfully"))
 }
-
-//async fn register_user(
-//    State((user_service, _)): State<(UserService, String)>,
-//    Json(user_creation): Json<UserCreation>,
-//) -> impl IntoResponse {
-//    if let Err(err) = user_service.register_user(user_creation).await {
-//        (
-//            StatusCode::INTERNAL_SERVER_ERROR,
-//            message_from_err(err, "register user"),
-//        )
-//    } else {
-//        (StatusCode::OK, "User added succesfully".into())
-//    }
-//}
 
 impl<T> HttpError<T> for Result<T, jsonwebtoken::errors::Error> {
     fn http_err(self, endpoint: &str) -> HttpResult<T> {
@@ -2325,12 +2334,12 @@ CREATE TABLE tuition (
 );
 
 -- 14) request_for_approval (new table)
-CREATE TABLE request_for_approval (
+CREATE TABLE request (
     request_id         TEXT PRIMARY KEY,
     requester_id       TEXT NOT NULL,
     requested_command  TEXT NOT NULL,
     justification      TEXT NOT NULL,
-    approved           INTEGER NOT NULL,  -- Bool stored as INTEGER (0 = false, 1 = true)
+    approved           INTEGER,  -- Bool stored as INTEGER (0 = false, 1 = true)
     approver_id        TEXT,             -- Nullable, as approval may be pending
     deleted            INTEGER NOT NULL DEFAULT 0,  -- Added for consistency
     FOREIGN KEY (requester_id) REFERENCES person(id_user),
@@ -2354,10 +2363,10 @@ impl RequestRepository for TursoDb {
     async fn create_request(&self, request: &Request) -> Result<()> {
         self.execute_with_error(
             "INSERT INTO request (
-                id, requester_id, requested_command, justification, approved, approver_id
+                request_id, requester_id, requested_command, justification, approved, approver_id
             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
-                request.id.to_string(),
+                request.request_id.to_string(),
                 request.requester_id.to_string(),
                 request.requested_command.clone(),
                 request.justification.clone(),
@@ -2371,9 +2380,9 @@ impl RequestRepository for TursoDb {
 
     async fn get_request_by_id(&self, id: Uuid) -> Result<Option<Request>> {
         self.query_one_with_error(
-            "SELECT id, requester_id, requested_command, justification, approved, approver_id 
+            "SELECT request_id, requester_id, requested_command, justification, approved, approver_id 
              FROM request 
-             WHERE id = ?1",
+             WHERE request_id = ?1",
             params![id.to_string()],
             Error::UnknownDatabaseError,
         )
@@ -2388,14 +2397,14 @@ impl RequestRepository for TursoDb {
                 justification = ?3, 
                 approved = ?4, 
                 approver_id = ?5
-             WHERE id = ?6",
+             WHERE request_id = ?6",
             params![
                 request.requester_id.to_string(),
                 request.requested_command.clone(),
                 request.justification.clone(),
                 request.approved,
                 request.approver_id.map(|id| id.to_string()),
-                request.id.to_string()
+                request.request_id.to_string()
             ],
             Error::UnknownDatabaseError,
         )
@@ -2404,7 +2413,7 @@ impl RequestRepository for TursoDb {
 
     async fn list_requests(&self) -> Result<Vec<Request>> {
         self.query_many_with_error(
-            "SELECT id, requester_id, requested_command, justification, approved, approver_id 
+            "SELECT request_id, requester_id, requested_command, justification, approved, approver_id 
              FROM request",
             params![],
             Error::UnknownDatabaseError,
@@ -2414,7 +2423,7 @@ impl RequestRepository for TursoDb {
 
     async fn list_requests_by_user(&self, user_id: Uuid) -> Result<Vec<Request>> {
         self.query_many_with_error(
-            "SELECT id, requester_id, requested_command, justification, approved, approver_id 
+            "SELECT request_id, requester_id, requested_command, justification, approved, approver_id 
              FROM request 
              WHERE requester_id = ?1",
             params![user_id.to_string()],
@@ -2443,21 +2452,6 @@ mod test {
             .await
             .build();
 
-        // Create test requests table
-        let conn = db.get_connection().await.expect("Failed to get connection");
-        conn.execute_batch(
-            "CREATE TABLE request (
-                id TEXT PRIMARY KEY,
-                requester_id TEXT NOT NULL,
-                requested_command TEXT NOT NULL,
-                justification TEXT NOT NULL,
-                approved INTEGER,
-                approver_id TEXT
-            );",
-        )
-        .await
-        .expect("Failed to create test requests table");
-
         db
     }
 
@@ -2468,8 +2462,12 @@ mod test {
         let request_id = Uuid::new_v4();
         let requester_id = Uuid::new_v4();
 
+        db.create_test_user(requester_id)
+            .await
+            .expect("Error creating test user");
+
         let request = Request {
-            id: request_id,
+            request_id,
             requester_id,
             requested_command: "Test Command".to_string(),
             justification: "Test Justification".to_string(),
@@ -2498,8 +2496,16 @@ mod test {
         let requester_id = Uuid::new_v4();
         let approver_id = Uuid::new_v4();
 
+        db.create_test_user(requester_id)
+            .await
+            .expect("Error creating test user");
+
+        db.create_test_user(approver_id)
+            .await
+            .expect("Error creating test user");
+
         let mut request = Request {
-            id: request_id,
+            request_id,
             requester_id,
             requested_command: "Test Command".to_string(),
             justification: "Test Justification".to_string(),
@@ -2534,10 +2540,14 @@ mod test {
         let db = repository.await;
         let requester_id = Uuid::new_v4();
 
+        db.create_test_user(requester_id)
+            .await
+            .expect("Error creating test user");
+
         // Create 3 requests
         for i in 0..3 {
             let request = Request {
-                id: Uuid::new_v4(),
+                request_id: Uuid::new_v4(),
                 requester_id,
                 requested_command: format!("Command {i}"),
                 justification: format!("Justification {i}"),
@@ -2562,10 +2572,18 @@ mod test {
         let user1_id = Uuid::new_v4();
         let user2_id = Uuid::new_v4();
 
+        db.create_test_user(user1_id)
+            .await
+            .expect("Error creating test user");
+
+        db.create_test_user(user2_id)
+            .await
+            .expect("Error creating test user");
+
         // Create 2 requests for user1
         for i in 0..2 {
             let request = Request {
-                id: Uuid::new_v4(),
+                request_id: Uuid::new_v4(),
                 requester_id: user1_id,
                 requested_command: format!("Command {i}"),
                 justification: format!("Justification {i}"),
@@ -2580,7 +2598,7 @@ mod test {
 
         // Create 1 request for user2
         let request = Request {
-            id: Uuid::new_v4(),
+            request_id: Uuid::new_v4(),
             requester_id: user2_id,
             requested_command: "Command".to_string(),
             justification: "Justification".to_string(),
@@ -4308,7 +4326,7 @@ pub enum Error {
 --- use_cases/src/category_service/mod.rs ---
 use chrono::Utc;
 use entities::{
-    category::{Category, CategoryRequirement, LevelName},
+    category::{Category, CategoryCreation, CategoryRequirement, LevelName},
     user::UserCategory,
 };
 use err::{Error, Result};
@@ -4316,7 +4334,7 @@ use repository_trait::{CategoryRepository, CategoryRequirementRepository, UserCa
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::user_service::{repository_trait::UserRepository, UserService};
+use crate::user_service::UserService;
 
 pub mod err;
 pub mod repository_trait;
@@ -4386,15 +4404,17 @@ impl CategoryService {
         self.category_repo.list_categories().await
     }
 
-    pub async fn add_category(&self, category: Category) -> Result<()> {
+    pub async fn add_category(&self, category_creation: CategoryCreation) -> Result<()> {
         if self
             .category_repo
-            .get_category_by_name(&category.name)
+            .get_category_by_name(&category_creation.name)
             .await?
             .is_some()
         {
             return Err(Error::CategoryAlreadyExists);
         }
+
+        let category = category_creation.to_category(Uuid::new_v4());
 
         self.category_repo.create_category(&category).await?;
 
@@ -4591,7 +4611,7 @@ impl RequestService {
         justification: String,
     ) -> Result<()> {
         let request = Request {
-            id: Uuid::new_v4(),
+            request_id: Uuid::new_v4(),
             requester_id,
             requested_command,
             justification,
@@ -4690,7 +4710,7 @@ pub enum Error {
 pub mod err;
 pub mod repository_trait;
 
-use crate::category_service::{repository_trait::UserCategoryRepository, CategoryService};
+use crate::category_service::CategoryService;
 
 use self::err::{Error, Result};
 use entities::tournament::{
@@ -4998,7 +5018,7 @@ use err::{Error, Result};
 use repository_trait::{TrainingRegistrationRepository, TrainingRepository};
 
 use crate::category_service::CategoryService;
-use entities::training::{Training, TrainingRegistration};
+use entities::training::{Training, TrainingCreation, TrainingRegistration};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -5022,12 +5042,14 @@ impl TrainingService {
         }
     }
 
-    pub async fn create_training(&self, training: &Training) -> Result<()> {
-        if training.start_datetime >= training.end_datetime {
+    pub async fn create_training(&self, training_creation: &TrainingCreation) -> Result<()> {
+        if training_creation.start_datetime >= training_creation.end_datetime {
             return Err(Error::InvalidDates);
         }
 
-        self.training_repo.create_training(training).await
+        let training = training_creation.to_training_cloned(Uuid::new_v4());
+
+        self.training_repo.create_training(&training).await
     }
 
     pub async fn get_training(&self, id: Uuid) -> Result<Training> {
@@ -5265,8 +5287,6 @@ pub trait TuitionRepository: Send + Sync {
 --- use_cases/src/tuition_service/tests.rs ---
 
 --- use_cases/src/user_service/err.rs ---
-use std::sync::Arc;
-
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -5304,7 +5324,7 @@ pub trait PasswordHasher: Send + Sync {
 use std::sync::Arc;
 
 use chrono::Utc;
-use entities::user::{URol, UserCreation, UserInfo, UserLogInInfo};
+use entities::user::{self, URol, UserCreation, UserInfo, UserLogInInfo};
 use hasher_trait::PasswordHasher;
 use repository_trait::UserRepository;
 
@@ -5386,6 +5406,33 @@ impl UserService {
         }
     }
 
+    pub async fn update_user(&self, user_id: Uuid, mut user_update: UserCreation) -> Result<()> {
+        // Check if user exists
+        if self.user_repo.get_user_by_id(user_id).await?.is_none() {
+            return Err(Error::UserIdDontExist);
+        }
+
+        let current_user = self.user_repo.get_user_by_id(user_id).await?.unwrap();
+
+        // If password is being updated, hash it
+        if !user_update.password.is_empty() {
+            user_update.password = self.password_hasher.hash(&user_update.password)?;
+        } else {
+            user_update.password = current_user.password;
+        }
+
+        let user_update = user_update.to_user(
+            current_user.id_user,
+            current_user.registration_date,
+            current_user.email_verified,
+            current_user.user_rol,
+        );
+
+        self.user_repo.update_user(&user_update).await?;
+
+        Ok(())
+    }
+
     pub async fn log_in_user(&self, user_log_in_info: &UserLogInInfo) -> Result<LogInResponse> {
         let identifier = &user_log_in_info.identifier;
 
@@ -5414,7 +5461,7 @@ impl UserService {
 
         Ok(LogInResponse {
             user_id,
-            user_rol: URol::ADMIN,
+            user_rol: user_info.user_rol,
         })
     }
 }

@@ -30,6 +30,7 @@ pub fn user_router(user_service: UserService, token_key: &str) -> Router {
         .route("/users", get(get_all_users))
         .route("/users/{id}", get(get_user_by_id))
         .route("/update/{id}", put(update_user))
+        .route("/update/{id}/role/{role}", put(update_user_role))
         .with_state((user_service, token_key.to_string()))
 }
 
@@ -53,6 +54,18 @@ async fn get_user_by_id(
         .http_err("get user by id")?;
 
     Ok(Json(user))
+}
+
+async fn update_user_role(
+    State((user_service, _)): State<(UserService, String)>,
+    Path((user_id, user_rol)): Path<(Uuid, URol)>,
+) -> HttpResult<impl IntoResponse> {
+    user_service
+        .update_user_role(user_id, user_rol)
+        .await
+        .http_err("update user")?;
+
+    Ok((StatusCode::OK, "User role updated successfully"))
 }
 
 async fn update_user(

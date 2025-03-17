@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use chrono::Utc;
-use entities::user::{self, URol, UserCreation, UserInfo, UserLogInInfo};
+use entities::user::{URol, UserCreation, UserInfo, UserLogInInfo};
 use hasher_trait::PasswordHasher;
 use repository_trait::UserRepository;
 
@@ -62,6 +62,20 @@ impl UserService {
         user.password = self.password_hasher.hash(&user.password)?;
 
         self.user_repo.create_user(&user).await?;
+
+        Ok(())
+    }
+
+    pub async fn update_user_role(&self, user_id: Uuid, user_rol: URol) -> Result<()> {
+        let mut user_info = self
+            .user_repo
+            .get_user_by_id(user_id)
+            .await?
+            .ok_or(Error::UserIdDontExist)?;
+
+        user_info.user_rol = user_rol;
+
+        self.user_repo.update_user(&user_info).await?;
 
         Ok(())
     }
