@@ -804,7 +804,7 @@ async fn main() {
         .merge(tournament_endpoints::tournament_router(tournament_service))
         .merge(category_endpoints::category_router(category_service))
         .merge(training_router(training_service))
-        .merge(request_router(request_service))
+        .merge(request_router(request_service, config.token_key.clone()))
         .merge(tuition_router(tuition_service, config.token_key));
 
     let cors_layer = CorsLayer::permissive();
@@ -825,6 +825,7 @@ async fn main() {
 use axum::{
     extract::{Path, State},
     http::StatusCode,
+    middleware,
     response::IntoResponse,
     routing::{get, post},
     Extension, Json, Router,
@@ -835,15 +836,19 @@ use use_cases::request_service::{err::Error, RequestService};
 use uuid::Uuid;
 
 use super::err::{HttpError, ToErrResponse};
-use crate::{auth::UserInfoAuth, err::HttpResult};
+use crate::{
+    auth::{auth_middleware, UserInfoAuth},
+    err::HttpResult,
+};
 
-pub fn request_router(request_service: RequestService) -> Router {
+pub fn request_router(request_service: RequestService, jwt_key: String) -> Router {
     Router::new()
         .route("/health-request", get(alive))
         .route("/requests", post(create_request).get(list_requests))
         .route("/requests/{id}", get(get_request))
         .route("/requests/{id}/complete/{approved}", post(complete_request))
         .route("/requests/user/{user_id}", get(list_user_requests))
+        .layer(middleware::from_fn_with_state(jwt_key, auth_middleware))
         .with_state(request_service)
 }
 
@@ -1403,6 +1408,7 @@ pub fn user_router(user_service: UserService, token_key: &str) -> Router {
         .route("/users", get(get_all_users))
         .route("/users/{id}", get(get_user_by_id))
         .route("/update/{id}", put(update_user))
+        .route("/update/{id}/role/{role}", put(update_user_role))
         .with_state((user_service, token_key.to_string()))
 }
 
@@ -1426,6 +1432,18 @@ async fn get_user_by_id(
         .http_err("get user by id")?;
 
     Ok(Json(user))
+}
+
+async fn update_user_role(
+    State((user_service, _)): State<(UserService, String)>,
+    Path((user_id, user_rol)): Path<(Uuid, URol)>,
+) -> HttpResult<impl IntoResponse> {
+    user_service
+        .update_user_role(user_id, user_rol)
+        .await
+        .http_err("update user role")?;
+
+    Ok((StatusCode::OK, "User role updated successfully"))
 }
 
 async fn update_user(
@@ -3944,8 +3962,8 @@ password = ?9,
 identification_number = ?10, 
 identification_type = ?11, 
 user_rol = ?12,
-deleted = ?13
-WHERE id_user = ?14",
+deleted = false
+WHERE id_user = ?13",
             params![
                 user.first_name.to_string(),
                 user.last_name.to_string(),
@@ -5324,7 +5342,7 @@ pub trait PasswordHasher: Send + Sync {
 use std::sync::Arc;
 
 use chrono::Utc;
-use entities::user::{self, URol, UserCreation, UserInfo, UserLogInInfo};
+use entities::user::{URol, UserCreation, UserInfo, UserLogInInfo};
 use hasher_trait::PasswordHasher;
 use repository_trait::UserRepository;
 
@@ -5385,6 +5403,20 @@ impl UserService {
         user.password = self.password_hasher.hash(&user.password)?;
 
         self.user_repo.create_user(&user).await?;
+
+        Ok(())
+    }
+
+    pub async fn update_user_role(&self, user_id: Uuid, user_rol: URol) -> Result<()> {
+        let mut user_info = self
+            .user_repo
+            .get_user_by_id(user_id)
+            .await?
+            .ok_or(Error::UserIdDontExist)?;
+
+        user_info.user_rol = user_rol;
+
+        self.user_repo.update_user(&user_info).await?;
 
         Ok(())
     }

@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{delete, get, post, put},
+    routing::{get, post},
     Json, Router,
 };
 use entities::{
@@ -159,7 +159,7 @@ impl<T> HttpError<T> for use_cases::category_service::err::Result<T> {
                 Error::InvalidRequirementLevel => {
                     "The user don't have the necesary level in one of it's category requirements"
                 }
-                Error::UserServiceError(error) => "Error with the user service",
+                Error::UserServiceError(_) => "Error with the user service",
             }
             .to_err_response()
         })

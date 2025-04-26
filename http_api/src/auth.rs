@@ -8,7 +8,7 @@ use chrono::Utc;
 use entities::user::URol;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
-use tracing::{error, info};
+use tracing::error;
 use use_cases::user_service::LogInResponse;
 use uuid::Uuid;
 

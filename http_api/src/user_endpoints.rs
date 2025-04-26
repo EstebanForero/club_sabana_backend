@@ -63,7 +63,7 @@ async fn update_user_role(
     user_service
         .update_user_role(user_id, user_rol)
         .await
-        .http_err("update user")?;
+        .http_err("update user role")?;
 
     Ok((StatusCode::OK, "User role updated successfully"))
 }

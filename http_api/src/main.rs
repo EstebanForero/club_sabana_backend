@@ -1,18 +1,9 @@
 use std::{
-    future::Future,
     net::{Ipv4Addr, SocketAddrV4},
     sync::Arc,
 };
 
-use auth::auth_middleware;
-use axum::{
-    body::Body,
-    extract::{Request, State},
-    http::StatusCode,
-    middleware::{self, FromFnLayer, Next},
-    response::IntoResponse,
-    Router,
-};
+use axum::Router;
 use request_endpoints::request_router;
 use serde::Deserialize;
 use tower_http::cors::CorsLayer;

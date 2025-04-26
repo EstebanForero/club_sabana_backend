@@ -195,8 +195,8 @@ password = ?9,
 identification_number = ?10, 
 identification_type = ?11, 
 user_rol = ?12,
-deleted = ?13
-WHERE id_user = ?14",
+deleted = false
+WHERE id_user = ?13",
             params![
                 user.first_name.to_string(),
                 user.last_name.to_string(),

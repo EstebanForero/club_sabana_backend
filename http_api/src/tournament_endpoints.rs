@@ -170,7 +170,7 @@ impl<T> HttpError<T> for use_cases::tournament_service::err::Result<T> {
                 Error::UserDoesNotMeetCategoryRequirements => {
                     "User is not part of the category required to join the tournament"
                 }
-                Error::CategoryServiceError(error) => "Error in the category service",
+                Error::CategoryServiceError(_) => "Error in the category service",
             }
             .to_err_response()
         })
