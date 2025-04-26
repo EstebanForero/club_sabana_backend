@@ -3,12 +3,12 @@ WORKDIR /app
 
 FROM chef AS planner
 COPY . .
-RUN cargo chef prepare --workspace
+RUN cargo chef prepare
 
 FROM chef AS builder
 COPY --from=planner /app/recipe.json .
 COPY . .
-RUN cargo chef cook --release --workspace
+RUN cargo chef cook --release
 RUN cargo build --release --bin club_sabana_backend
 # Assuming the binary is in the http_api crate; adjust if necessary
 RUN mv ./target/release/club_sabana_backend ./app
