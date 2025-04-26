@@ -9,7 +9,7 @@ FROM chef AS builder
 COPY --from=planner /app/recipe.json .
 COPY . .
 RUN cargo chef cook --release
-RUN cargo build --release --bin
+RUN cargo build --release
 # Assuming the binary is in the http_api crate; adjust if necessary
 RUN mv ./target/release/club_sabana_backend ./app
 
