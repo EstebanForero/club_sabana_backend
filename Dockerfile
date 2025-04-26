@@ -2,15 +2,15 @@ FROM lukemathwalker/cargo-chef:latest as chef
 WORKDIR /app
 
 FROM chef AS planner
-COPY ./Cargo.toml ./Cargo.lock ./
-COPY ./src ./src
-RUN cargo chef prepare
+COPY . .
+RUN cargo chef prepare --workspace
 
 FROM chef AS builder
 COPY --from=planner /app/recipe.json .
-RUN cargo chef cook --release
 COPY . .
-RUN cargo build --release
+RUN cargo chef cook --release --workspace
+RUN cargo build --release --bin club_sabana_backend
+# Assuming the binary is in the http_api crate; adjust if necessary
 RUN mv ./target/release/club_sabana_backend ./app
 
 FROM debian:stable-slim AS runtime
