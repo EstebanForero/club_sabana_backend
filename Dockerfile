@@ -11,7 +11,7 @@ COPY . .
 RUN cargo chef cook --release
 RUN cargo build --release
 # Assuming the binary is in the http_api crate; adjust if necessary
-RUN mv ./target/release/club_sabana_backend ./app
+RUN mv ./target/release/http_api ./app
 
 FROM debian:stable-slim AS runtime
 WORKDIR /app
