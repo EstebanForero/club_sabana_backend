@@ -26,7 +26,11 @@ pub trait LevelRepository: Send + Sync {
 #[async_trait]
 pub trait CategoryRequirementRepository: Send + Sync {
     async fn create_category_requirement(&self, requirement: &CategoryRequirement) -> Result<()>;
-    async fn delete_category_requirement(&self, requirement: &CategoryRequirement) -> Result<()>;
+    async fn delete_category_requirement(
+        &self,
+        category_req_id: &Uuid,
+        category_id: &Uuid,
+    ) -> Result<()>;
     async fn get_category_requirements(
         &self,
         category_id: Uuid,

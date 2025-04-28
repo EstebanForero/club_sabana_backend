@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use entities::{
@@ -31,9 +31,11 @@ pub fn category_router(category_service: CategoryService) -> Router {
         )
         .route(
             "/categories/{id}/requirements",
-            post(add_requirement)
-                .get(get_requirements)
-                .delete(remove_requirement),
+            post(add_requirement).get(get_requirements),
+        )
+        .route(
+            "/categories/{id}/requirements/{requirement_id}",
+            delete(remove_requirement),
         )
         .route("/categories/{id}/users/{user_id}", get(get_user_category))
         .with_state(category_service)
@@ -116,10 +118,10 @@ async fn add_requirement(
 
 async fn remove_requirement(
     State(category_service): State<CategoryService>,
-    Json(requirement): Json<CategoryRequirement>,
+    Path((category_id, category_requirement_id)): Path<(Uuid, Uuid)>,
 ) -> Result<(), Response> {
     category_service
-        .add_category_requirement(&requirement)
+        .delete_category_requirement(&category_requirement_id, &category_id)
         .await
         .http_err("add requirement")?;
 

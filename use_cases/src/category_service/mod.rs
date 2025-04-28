@@ -103,10 +103,11 @@ impl CategoryService {
 
     pub async fn delete_category_requirement(
         &self,
-        category_req: &CategoryRequirement,
+        category_req_id: &Uuid,
+        category_id: &Uuid,
     ) -> Result<()> {
         self.requirement_repo
-            .delete_category_requirement(category_req)
+            .delete_category_requirement(category_req_id, category_id)
             .await
     }
 
