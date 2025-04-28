@@ -20,7 +20,7 @@ impl CategoryRequirementRepository for TursoDb {
             .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
 
         conn.execute("INSERT INTO category_requirement (id_category_requirement, id_category, requirement_description,
-required_level, deleted) VALUES (?1, ?2, ?3, ?4, ?5)",
+required_level, deleted) VALUES (?1, ?2, ?3, ?4, 0)",
             params![requirement.id_category_requirement.to_string(), requirement.id_category.to_string(),
                 requirement.requirement_description.to_string(),
             requirement.required_level.to_string()]).await
