@@ -29,6 +29,19 @@ required_level, deleted) VALUES (?1, ?2, ?3, ?4, 0)",
         Ok(())
     }
 
+    async fn delete_category_requirement(&self, requirement: &CategoryRequirement) -> Result<()> {
+        let conn = self
+            .get_connection()
+            .await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        conn.execute("DELETE FROM category_requirement WHERE id_category_requirement = ?1 AND id_category = ?2",
+            params![requirement.id_category_requirement.to_string(), requirement.id_category.to_string()]).await
+            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
+
+        Ok(())
+    }
+
     async fn get_category_requirements(
         &self,
         category_id: Uuid,

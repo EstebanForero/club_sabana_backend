@@ -60,12 +60,13 @@ CREATE TABLE person (
 ----------------------------------------------------------------
 -- 6) category_requirement
 ----------------------------------------------------------------
-CREATE TABLE category_requirement (
-    id_category_requirement   TEXT PRIMARY KEY,
+CREATE TABLE category_requirement(
     id_category               TEXT NOT NULL,
+    id_category_requirement   TEXT NOT NULL,
     requirement_description   TEXT,
     required_level            TEXT NOT NULL,
     deleted                   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (id_category, id_category_requirement),
     FOREIGN KEY (id_category)    REFERENCES category(id_category),
     FOREIGN KEY (required_level) REFERENCES level(level_name)
 );

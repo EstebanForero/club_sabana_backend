@@ -101,6 +101,15 @@ impl CategoryService {
             .await
     }
 
+    pub async fn delete_category_requirement(
+        &self,
+        category_req: &CategoryRequirement,
+    ) -> Result<()> {
+        self.requirement_repo
+            .delete_category_requirement(category_req)
+            .await
+    }
+
     pub async fn get_category_requirements(
         &self,
         category_id: Uuid,

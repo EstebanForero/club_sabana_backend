@@ -31,7 +31,9 @@ pub fn category_router(category_service: CategoryService) -> Router {
         )
         .route(
             "/categories/{id}/requirements",
-            post(add_requirement).get(get_requirements),
+            post(add_requirement)
+                .get(get_requirements)
+                .delete(remove_requirement),
         )
         .route("/categories/{id}/users/{user_id}", get(get_user_category))
         .with_state(category_service)
@@ -110,6 +112,18 @@ async fn add_requirement(
         .http_err("add requirement")?;
 
     Ok(Json(requirement))
+}
+
+async fn remove_requirement(
+    State(category_service): State<CategoryService>,
+    Json(requirement): Json<CategoryRequirement>,
+) -> Result<(), Response> {
+    category_service
+        .add_category_requirement(&requirement)
+        .await
+        .http_err("add requirement")?;
+
+    Ok(())
 }
 
 async fn get_requirements(
