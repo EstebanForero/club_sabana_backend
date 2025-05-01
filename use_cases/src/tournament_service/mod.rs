@@ -4,6 +4,7 @@ pub mod repository_trait;
 use crate::category_service::CategoryService;
 
 use self::err::{Error, Result};
+use chrono::{Local, NaiveDateTime};
 use entities::tournament::{
     Tournament, TournamentAttendance, TournamentCreation, TournamentRegistration,
 };
@@ -38,6 +39,10 @@ impl TournamentService {
 
     pub async fn create_tournament(&self, tournament: TournamentCreation) -> Result<()> {
         if tournament.start_datetime >= tournament.end_datetime {
+            return Err(Error::InvalidDates);
+        }
+
+        if tournament.start_datetime <= Local::now().naive_local() {
             return Err(Error::InvalidDates);
         }
 

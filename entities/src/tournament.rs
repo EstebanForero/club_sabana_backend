@@ -7,7 +7,7 @@ use uuid::Uuid;
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Partial)]
 #[partial(
     "TournamentCreation",
-    derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Partial),
+    derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq),
     omit(id_tournament)
 )]
 pub struct Tournament {

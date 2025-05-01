@@ -38,7 +38,9 @@ struct Config {
 #[tokio::main]
 async fn main() {
     let _ = dotenvy::dotenv();
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
 
     let config: Config = envy::from_env().expect("Error generating config with the .env file");
 

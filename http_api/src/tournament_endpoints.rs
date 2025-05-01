@@ -3,7 +3,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post, put},
-    Json, Router,
+    Json, Router, ServiceExt,
 };
 use entities::tournament::{
     Tournament, TournamentAttendance, TournamentCreation, TournamentRegistration,
@@ -174,5 +174,112 @@ impl<T> HttpError<T> for use_cases::tournament_service::err::Result<T> {
             }
             .to_err_response()
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*; // Import everything from the parent module
+    use chrono::NaiveDateTime;
+    use serde_json;
+    use uuid::Uuid;
+
+    // Define TournamentCreation if not directly accessible
+    #[test]
+    fn test_deserialize_tournament_creation_success() {
+        let json = r#"
+        {
+            "name": "Summer championship",
+            "id_category": "346a12fb-914d-412a-a39e-e14d00a69ac9",
+            "start_datetime": "2006-02-19 08:00:00",
+            "end_datetime": "2006-02-19 10:00:00"
+        }
+        "#;
+
+        let result: Result<TournamentCreation, _> = serde_json::from_str(json);
+        assert!(result.is_ok(), "Deserialization failed: {:?}", result.err());
+
+        let tournament = result.unwrap();
+        assert_eq!(tournament.name, "Summer championship");
+        assert_eq!(
+            tournament.id_category,
+            Uuid::parse_str("346a12fb-914d-412a-a39e-e14d00a69ac9").unwrap()
+        );
+        assert_eq!(
+            tournament.start_datetime,
+            NaiveDateTime::parse_from_str("2006-02-19 08:00:00", "%Y-%m-%d %H:%M:%S").unwrap()
+        );
+        assert_eq!(
+            tournament.end_datetime,
+            NaiveDateTime::parse_from_str("2006-02-19 10:00:00", "%Y-%m-%d %H:%M:%S").unwrap()
+        );
+    }
+
+    #[test]
+    fn test_deserialize_tournament_creation_success_should() {
+        let id_category = Uuid::new_v4();
+
+        let tournament_creation = TournamentCreation {
+            name: "Summer championship".to_string(),
+            id_category,
+            start_datetime: NaiveDateTime::parse_from_str(
+                "2006-02-19 08:00:00",
+                "%Y-%m-%d %H:%M:%S",
+            )
+            .expect("Error parsing date from string"),
+            end_datetime: NaiveDateTime::parse_from_str("2006-02-19 10:00:00", "%Y-%m-%d %H:%M:%S")
+                .expect("Error parsing from string"),
+        };
+
+        let json = serde_json::to_string(&tournament_creation)
+            .expect("Failed to serialize tournament data");
+
+        println!("The json file is: {json}");
+
+        let result: Result<TournamentCreation, _> = serde_json::from_str(&json);
+        assert!(result.is_ok(), "Deserialization failed: {:?}", result.err());
+
+        let tournament = result.unwrap();
+        assert_eq!(tournament.name, "Summer championship");
+        assert_eq!(tournament.id_category, id_category);
+        assert_eq!(
+            tournament.start_datetime,
+            NaiveDateTime::parse_from_str("2006-02-19 08:00:00", "%Y-%m-%d %H:%M:%S").unwrap()
+        );
+        assert_eq!(
+            tournament.end_datetime,
+            NaiveDateTime::parse_from_str("2006-02-19 10:00:00", "%Y-%m-%d %H:%M:%S").unwrap()
+        );
+    }
+
+    #[test]
+    fn test_deserialize_tournament_creation_invalid_datetime() {
+        // Simulate a common invalid format (ISO 8601 with 'T')
+        let json = r#"
+        {
+            "name": "Summer championship",
+            "id_category": "346a12fb-914d-412a-a39e-e14d00a69ac9",
+            "start_datetime": "2006-02-19T08:00:00",
+            "end_datetime": "2006-02-19 10:00:00"
+        }
+        "#;
+
+        let result: Result<TournamentCreation, _> = serde_json::from_str(json);
+        assert!(
+            result.is_err(),
+            "Deserialization should have failed but succeeded"
+        );
+        let error = result.unwrap_err();
+        let error_msg = error.to_string();
+        assert!(
+            error_msg.contains("start_datetime"),
+            "Error should mention 'start_datetime', got: {}",
+            error_msg
+        );
+        assert!(
+            error_msg.contains("invalid characters"),
+            "Error should mention 'invalid characters', got: {}",
+            error_msg
+        );
     }
 }
