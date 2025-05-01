@@ -406,7 +406,7 @@ mod test {
             .await
             .expect("Error creating category");
 
-        db.get_user_category(user.id_user, category_id)
+        db.get_user_categories(user.id_user, category_id)
             .await
             .expect("Error getting user category");
 
