@@ -38,6 +38,7 @@ pub fn category_router(category_service: CategoryService) -> Router {
             delete(remove_requirement),
         )
         .route("/categories/{id}/users/{user_id}", get(get_user_category))
+        .route("/categories/user/{user_id}", get(get_user_categories))
         .with_state(category_service)
 }
 
@@ -148,6 +149,18 @@ async fn get_user_category(
         .get_user_category(user_id, category_id)
         .await
         .http_err("get user category")?;
+
+    Ok(Json(user_category))
+}
+
+async fn get_user_categories(
+    State(category_service): State<CategoryService>,
+    Path(user_id): Path<Uuid>,
+) -> Result<Json<Vec<UserCategory>>, Response> {
+    let user_category = category_service
+        .get_user_categories(user_id)
+        .await
+        .http_err("get user categories")?;
 
     Ok(Json(user_category))
 }
