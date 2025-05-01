@@ -38,13 +38,7 @@ impl TournamentService {
     }
 
     pub async fn create_tournament(&self, tournament: TournamentCreation) -> Result<()> {
-        if tournament.start_datetime >= tournament.end_datetime {
-            return Err(Error::InvalidDates);
-        }
-
-        if tournament.start_datetime <= Local::now().naive_local() {
-            return Err(Error::InvalidDates);
-        }
+        validate_tournament_dates(tournament.start_datetime, tournament.end_datetime)?;
 
         self.tournament_repo
             .create_tournament(&tournament.to_tournament(Uuid::new_v4()))
@@ -61,9 +55,7 @@ impl TournamentService {
     }
 
     pub async fn update_tournament(&self, tournament: Tournament) -> Result<()> {
-        if tournament.start_datetime >= tournament.end_datetime {
-            return Err(Error::InvalidDates);
-        }
+        validate_tournament_dates(tournament.start_datetime, tournament.end_datetime)?;
 
         if self
             .tournament_repo
@@ -232,4 +224,16 @@ impl TournamentService {
 
         Ok(eligible_tournaments)
     }
+}
+
+fn validate_tournament_dates(start_time: NaiveDateTime, end_time: NaiveDateTime) -> Result<()> {
+    if start_time >= end_time {
+        return Err(Error::InvalidDates);
+    }
+
+    if start_time <= Local::now().naive_local() {
+        return Err(Error::InvalidDates);
+    }
+
+    Ok(())
 }
