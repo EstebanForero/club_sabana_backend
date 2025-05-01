@@ -211,6 +211,17 @@ impl TournamentRegistrationRepository for TursoDb {
         .await
     }
 
+    async fn get_user_registrations(&self, user_id: Uuid) -> Result<Vec<TournamentRegistration>> {
+        self.query_many_with_error(
+            "SELECT id_tournament, id_user, registration_datetime
+             FROM tournament_registration
+             WHERE id_user = ?1 AND deleted = 0",
+            params![user_id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
     // async fn get_tournament_registrations(
     //     &self,
     //     tournament_id: Uuid,

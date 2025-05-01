@@ -23,6 +23,7 @@ pub trait TournamentRegistrationRepository: Send + Sync {
         &self,
         tournament_id: Uuid,
     ) -> Result<Vec<TournamentRegistration>>;
+    async fn get_user_registrations(&self, user_id: Uuid) -> Result<Vec<TournamentRegistration>>;
 }
 
 #[async_trait]

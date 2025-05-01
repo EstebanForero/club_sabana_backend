@@ -170,6 +170,22 @@ impl TournamentService {
         Ok(())
     }
 
+    pub async fn get_user_registrations(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<TournamentRegistration>> {
+        self.registration_repo.get_user_registrations(user_id).await
+    }
+
+    pub async fn get_tournament_registrations(
+        &self,
+        tournament_id: Uuid,
+    ) -> Result<Vec<TournamentRegistration>> {
+        self.registration_repo
+            .get_tournament_registrations(tournament_id)
+            .await
+    }
+
     pub async fn update_position(
         &self,
         tournament_id: Uuid,

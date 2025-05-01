@@ -31,7 +31,15 @@ pub fn tournament_router(tournament_service: TournamentService) -> Router {
         .route("/tournaments/{id}/attendance", post(record_attendance))
         .route("/tournaments/{id}/position", put(update_position))
         .route(
-            "/users/{id}/eligible-tournaments",
+            "/tournaments/registrations/user/{user_id}",
+            get(get_user_registrations),
+        )
+        .route(
+            "/tournaments/registrations/tournament/{tournament_id}",
+            get(get_tournament_registrations),
+        )
+        .route(
+            "/tournaments/users/{id}/eligible-tournaments",
             get(get_eligible_tournaments),
         )
         .with_state(tournament_service)
@@ -135,6 +143,28 @@ async fn get_eligible_tournaments(
         .http_err("get eligible tournaments")?;
 
     Ok(Json(tournaments))
+}
+
+async fn get_user_registrations(
+    State(tournament_service): State<TournamentService>,
+    Path(user_id): Path<Uuid>,
+) -> HttpResult<Json<Vec<TournamentRegistration>>> {
+    let registrations = tournament_service
+        .get_user_registrations(user_id)
+        .await
+        .http_err("get user registrations")?;
+    Ok(Json(registrations))
+}
+
+async fn get_tournament_registrations(
+    State(tournament_service): State<TournamentService>,
+    Path(tournament_id): Path<Uuid>,
+) -> HttpResult<Json<Vec<TournamentRegistration>>> {
+    let registrations = tournament_service
+        .get_tournament_registrations(tournament_id)
+        .await
+        .http_err("get tournament registrations")?;
+    Ok(Json(registrations))
 }
 
 async fn update_position(
