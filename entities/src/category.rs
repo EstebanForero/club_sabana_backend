@@ -38,22 +38,26 @@ pub enum LevelName {
     PROFESSIONAL,
 }
 
+impl LevelName {
+    fn value(&self) -> u8 {
+        match self {
+            LevelName::BEGGINER => 0,
+            LevelName::AMATEUR => 1,
+            LevelName::PROFESSIONAL => 2,
+        }
+    }
+}
+
 impl PartialOrd for LevelName {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        let ordering = match self {
-            LevelName::BEGGINER => match other {
-                LevelName::BEGGINER => Ordering::Equal,
-                LevelName::AMATEUR => Ordering::Greater,
-                LevelName::PROFESSIONAL => Ordering::Greater,
-            },
-            LevelName::AMATEUR => match other {
-                LevelName::BEGGINER => Ordering::Less,
-                LevelName::AMATEUR => Ordering::Equal,
-                LevelName::PROFESSIONAL => Ordering::Greater,
-            },
-            LevelName::PROFESSIONAL => todo!(),
-        };
+        Some(self.cmp(other)) // Delegate to the full Ord implementation
+    }
+}
 
-        Some(ordering)
+impl Eq for LevelName {}
+
+impl Ord for LevelName {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.value().cmp(&other.value())
     }
 }

@@ -37,13 +37,44 @@ pub fn category_router(category_service: CategoryService) -> Router {
             "/categories/{id}/requirements/{requirement_id}",
             delete(remove_requirement),
         )
-        .route("/categories/{id}/users/{user_id}", get(get_user_category))
+        .route(
+            "/categories/{category_id}/users/{user_id}",
+            post(register_user_in_category).get(get_user_category),
+        )
+        .route(
+            "/categories/{category_id}/users/{user_id}/eligible", // New eligibility check route
+            get(check_user_eligibility),
+        )
         .route("/categories/user/{user_id}", get(get_user_categories))
         .with_state(category_service)
 }
 
 async fn alive() -> &'static str {
     "Category service is alive"
+}
+
+async fn check_user_eligibility(
+    State(category_service): State<CategoryService>,
+    Path((category_id, user_id)): Path<(Uuid, Uuid)>,
+) -> HttpResult<Json<bool>> {
+    category_service
+        .is_user_eligible_for_category(user_id, category_id)
+        .await
+        .http_err("check user eligibility")?;
+
+    Ok(Json(true))
+}
+
+async fn register_user_in_category(
+    State(category_service): State<CategoryService>,
+    Path((category_id, user_id)): Path<(Uuid, Uuid)>,
+) -> HttpResult<impl IntoResponse> {
+    category_service
+        .add_user_to_category(user_id, category_id)
+        .await
+        .http_err("register user in category")?;
+
+    Ok((StatusCode::OK, "User registered in category successfully"))
 }
 
 async fn create_category(

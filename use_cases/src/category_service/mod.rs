@@ -145,32 +145,8 @@ impl CategoryService {
             return Err(Error::UserAlreadyHasCategory);
         }
 
-        let category = self.get_category_by_id(category_id).await?;
-
-        let user = self.user_service.get_user_by_id(user_id).await?;
-
-        let current_date = Utc::now().naive_utc().date();
-        let birth_date = user.birth_date;
-        let user_age = current_date.years_since(birth_date).unwrap_or(0);
-
-        if (category.min_age as u32) > user_age || (category.max_age as u32) < user_age {
-            return Err(Error::InvalidUserAge);
-        }
-
-        let requirements = self.get_category_requirements(category_id).await?;
-
-        for requirement in requirements {
-            if let Some(user_category) = self
-                .get_user_category(user_id, requirement.id_category)
-                .await?
-            {
-                if user_category.user_level < requirement.required_level {
-                    return Err(Error::InvalidRequirementLevel);
-                }
-            } else {
-                return Err(Error::UserDoesNotMeetRequirements);
-            }
-        }
+        self.perform_eligibility_checks(user_id, category_id)
+            .await?;
 
         let user_category = UserCategory {
             id_user: user_id,
@@ -185,12 +161,58 @@ impl CategoryService {
         Ok(())
     }
 
-    // get user categories it is elegible to
-    //pub async fn get_elegible_categories(
-    //    &self,
-    //    category_id: Uuid,
-    //    user_id: _,
-    //) -> Result<Vec<Category>> {
-    //    todo!()
-    //}
+    pub async fn is_user_eligible_for_category(
+        &self,
+        user_id: Uuid,
+        category_id: Uuid,
+    ) -> Result<()> {
+        self.perform_eligibility_checks(user_id, category_id)
+            .await
+            .map(|_| ())
+    }
+
+    async fn perform_eligibility_checks(
+        &self,
+        user_id: Uuid,
+        category_id: Uuid,
+    ) -> Result<Category> {
+        // 1. Get category details
+        let category = self.get_category_by_id(category_id).await?;
+
+        // 2. Get user details
+        let user = self.user_service.get_user_by_id(user_id).await?;
+
+        // 3. Validate age requirement
+        let current_date = Utc::now().naive_utc().date();
+        let birth_date = user.birth_date;
+        let user_age = current_date.years_since(birth_date).unwrap_or(0);
+        let min_age = category.min_age as u32;
+        let max_age = category.max_age as u32;
+
+        if user_age < min_age || user_age > max_age {
+            return Err(Error::InvalidUserAge);
+        }
+
+        // 4. Validate prerequisite category requirements
+        let requirements = self.get_category_requirements(category_id).await?;
+
+        for requirement in requirements {
+            match self
+                .get_user_category(user_id, requirement.id_category)
+                .await?
+            {
+                Some(user_prerequisite_category) => {
+                    if user_prerequisite_category.user_level < requirement.required_level {
+                        return Err(Error::InvalidRequirementLevel);
+                    }
+                }
+                None => {
+                    return Err(Error::UserDoesNotMeetRequirements);
+                }
+            }
+        }
+
+        // All checks passed
+        Ok(category) // Return category details if needed by the caller
+    }
 }
