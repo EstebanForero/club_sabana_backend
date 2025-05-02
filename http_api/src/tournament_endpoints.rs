@@ -42,6 +42,14 @@ pub fn tournament_router(tournament_service: TournamentService) -> Router {
             "/tournaments/users/{id}/eligible-tournaments",
             get(get_eligible_tournaments),
         )
+        .route(
+            "/tournaments/{id}/attendance",
+            get(get_tournament_attendance),
+        )
+        .route(
+            "/tournaments/users/{id}/attendance",
+            get(get_user_attendance),
+        )
         .with_state(tournament_service)
 }
 
@@ -143,6 +151,30 @@ async fn get_eligible_tournaments(
         .http_err("get eligible tournaments")?;
 
     Ok(Json(tournaments))
+}
+
+async fn get_tournament_attendance(
+    State(tournament_service): State<TournamentService>,
+    Path(tournament_id): Path<Uuid>,
+) -> Result<Json<Vec<TournamentAttendance>>, Response> {
+    let attendance = tournament_service
+        .get_tournament_attendance(tournament_id)
+        .await
+        .http_err("get tournament attendance")?;
+
+    Ok(Json(attendance))
+}
+
+async fn get_user_attendance(
+    State(tournament_service): State<TournamentService>,
+    Path(user_id): Path<Uuid>,
+) -> Result<Json<Vec<TournamentAttendance>>, Response> {
+    let attendance = tournament_service
+        .get_user_attendance(user_id)
+        .await
+        .http_err("get user attendance")?;
+
+    Ok(Json(attendance))
 }
 
 async fn get_user_registrations(

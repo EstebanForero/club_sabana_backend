@@ -240,6 +240,31 @@ impl TournamentService {
 
         Ok(eligible_tournaments)
     }
+
+    pub async fn get_tournament_attendance(
+        &self,
+        tournament_id: Uuid,
+    ) -> Result<Vec<TournamentAttendance>> {
+        self.attendance_repo
+            .get_tournament_attendance(tournament_id)
+            .await
+    }
+
+    pub async fn get_user_attendance(&self, user_id: Uuid) -> Result<Vec<TournamentAttendance>> {
+        let all_tournaments = self.tournament_repo.list_tournaments().await?;
+        let mut user_attendance = Vec::new();
+
+        for tournament in all_tournaments {
+            let attendance = self
+                .attendance_repo
+                .get_tournament_attendance(tournament.id_tournament)
+                .await?;
+
+            user_attendance.extend(attendance.into_iter().filter(|a| a.id_user == user_id));
+        }
+
+        Ok(user_attendance)
+    }
 }
 
 fn validate_tournament_dates(start_time: NaiveDateTime, end_time: NaiveDateTime) -> Result<()> {
