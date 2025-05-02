@@ -6,6 +6,7 @@ use entities::{
 use err::{Error, Result};
 use repository_trait::{CategoryRepository, CategoryRequirementRepository, UserCategoryRepository};
 use std::sync::Arc;
+use tracing::info;
 use uuid::Uuid;
 
 use crate::user_service::UserService;
@@ -131,9 +132,12 @@ impl CategoryService {
     }
 
     pub async fn user_has_category(&self, user_id: Uuid, category_id: Uuid) -> Result<bool> {
-        self.user_category_repo
-            .user_has_category(user_id, category_id)
-            .await
+        info!("User has category called with: user_id: {user_id}, and category_id: {category_id}");
+        dbg!(
+            self.user_category_repo
+                .user_has_category(user_id, category_id)
+                .await
+        )
     }
 
     pub async fn get_user_categories(&self, user_id: Uuid) -> Result<Vec<UserCategory>> {

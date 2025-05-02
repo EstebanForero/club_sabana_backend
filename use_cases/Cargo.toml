@@ -8,4 +8,5 @@ async-trait = "0.1.86"
 chrono = "0.4.39"
 entities = { path = "../entities" }
 thiserror = "2.0.11"
+tracing = "0.1.41"
 uuid = "1.13.1"

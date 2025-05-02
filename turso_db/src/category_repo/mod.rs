@@ -115,24 +115,13 @@ impl UserCategoryRepository for TursoDb {
     }
 
     async fn user_has_category(&self, id_user: Uuid, id_category: Uuid) -> Result<bool> {
-        let conn = self
-            .get_connection()
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
-
-        let mut rows = conn
-            .query(
-                "SELECT 1 FROM user_category WHERE id_category = ?1 AND id_user = ?2 AND deleted = 0",
-                params![id_user.to_string(), id_category.to_string()],
-            )
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?;
-
-        Ok(rows
-            .next()
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(err.to_string()))?
-            .is_some())
+        self.query_one_with_error::<i32, Error>(
+            "SELECT 1 FROM user_category WHERE id_category = ?1 AND id_user = ?2 AND deleted = 0",
+            params![id_user.to_string(), id_category.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+        .map(|_| true)
     }
 
     async fn create_user_category(&self, user_category: &UserCategory) -> Result<()> {
