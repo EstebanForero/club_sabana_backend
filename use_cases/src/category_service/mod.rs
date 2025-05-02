@@ -132,12 +132,9 @@ impl CategoryService {
     }
 
     pub async fn user_has_category(&self, user_id: Uuid, category_id: Uuid) -> Result<bool> {
-        info!("User has category called with: user_id: {user_id}, and category_id: {category_id}");
-        dbg!(
-            self.user_category_repo
-                .user_has_category(user_id, category_id)
-                .await
-        )
+        self.user_category_repo
+            .user_has_category(user_id, category_id)
+            .await
     }
 
     pub async fn get_user_categories(&self, user_id: Uuid) -> Result<Vec<UserCategory>> {
@@ -180,13 +177,10 @@ impl CategoryService {
         user_id: Uuid,
         category_id: Uuid,
     ) -> Result<Category> {
-        // 1. Get category details
         let category = self.get_category_by_id(category_id).await?;
 
-        // 2. Get user details
         let user = self.user_service.get_user_by_id(user_id).await?;
 
-        // 3. Validate age requirement
         let current_date = Utc::now().naive_utc().date();
         let birth_date = user.birth_date;
         let user_age = current_date.years_since(birth_date).unwrap_or(0);
@@ -197,7 +191,6 @@ impl CategoryService {
             return Err(Error::InvalidUserAge);
         }
 
-        // 4. Validate prerequisite category requirements
         let requirements = self.get_category_requirements(category_id).await?;
 
         for requirement in requirements {
@@ -216,7 +209,6 @@ impl CategoryService {
             }
         }
 
-        // All checks passed
-        Ok(category) // Return category details if needed by the caller
+        Ok(category)
     }
 }
