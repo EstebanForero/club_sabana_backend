@@ -108,18 +108,18 @@ impl TrainingRegistrationRepository for TursoDb {
     }
 
     async fn register_user_for_training(&self, registration: &TrainingRegistration) -> Result<()> {
-        self.execute_with_error("INSERT INTO training_registration (id_user, registration_datetime, attended, attendance_time, id_training)
-VALUES (id_user = 1?, registration_datetime = ?2, attended = ?3, attendance_time = ?4, id_training = ?5 = ?6)", params![
-    registration.id_user.to_string(),
-    registration.registration_datetime
-                    .format("%Y-%m-%d %H:%M:%S")
-                    .to_string(),
-    registration.attended,
-    registration.attendance_datetime
-                    .format("%Y-%m-%d %H:%M:%S")
-                    .to_string(),
-    registration.id_training.to_string(),
-], Error::UnknownDatabaseError).await
+        self.execute_with_error(
+        "INSERT INTO training_registration (id_user, registration_datetime, attended, attendance_datetime, id_training)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            registration.id_user.to_string(),
+            registration.registration_datetime.format("%Y-%m-%d %H:%M:%S").to_string(),
+            registration.attended,
+            registration.attendance_datetime.map(|date_time| date_time.format("%Y-%m-%d %H:%M:%S").to_string()),
+            registration.id_training.to_string(),
+        ],
+        Error::UnknownDatabaseError,
+    ).await
     }
 
     async fn get_training_registrations(
@@ -127,7 +127,7 @@ VALUES (id_user = 1?, registration_datetime = ?2, attended = ?3, attendance_time
         training_id: Uuid,
     ) -> Result<Vec<TrainingRegistration>> {
         self.query_many_with_error(
-            "SELECT id_user, registration_datetime, attended, attendance_time, id_training
+            "SELECT id_user, registration_datetime, attended, attendance_datetime, id_training
 FROM training_registration WHERE id_training = ?1",
             params![training_id.to_string()],
             Error::UnknownDatabaseError,

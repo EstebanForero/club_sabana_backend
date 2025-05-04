@@ -1,6 +1,7 @@
 pub mod category;
 pub mod date_serde;
 pub mod datetime_serde;
+pub mod datetime_serde_option;
 pub mod request;
 pub mod tournament;
 pub mod training;

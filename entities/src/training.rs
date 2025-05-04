@@ -1,4 +1,5 @@
 use super::datetime_serde;
+use super::datetime_serde_option;
 use chrono::NaiveDateTime;
 use partial_struct::Partial;
 use serde::{Deserialize, Serialize};
@@ -28,6 +29,6 @@ pub struct TrainingRegistration {
     #[serde(with = "datetime_serde")]
     pub registration_datetime: NaiveDateTime,
     pub attended: bool,
-    #[serde(with = "datetime_serde")]
-    pub attendance_datetime: NaiveDateTime,
+    #[serde(with = "datetime_serde_option")]
+    pub attendance_datetime: Option<NaiveDateTime>,
 }
