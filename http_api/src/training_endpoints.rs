@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use entities::training::{Training, TrainingCreation, TrainingRegistration};
@@ -28,11 +28,61 @@ pub fn training_router(training_service: TrainingService) -> Router {
             "/users/{id}/eligible-trainings",
             get(get_eligible_trainings),
         )
+        .route(
+            "/users/{id}/training-registrations",
+            get(get_user_training_registrations),
+        )
+        .route(
+            "/trainings/{id}/registrations",
+            get(get_training_registrations),
+        )
+        .route(
+            "/trainings/{training_id}/registrations/{user_id}",
+            delete(delete_training_registration),
+        )
         .with_state(training_service)
 }
 
 async fn alive() -> &'static str {
     "Training service is alive"
+}
+
+async fn get_user_training_registrations(
+    State(training_service): State<TrainingService>,
+    Path(user_id): Path<Uuid>,
+) -> Result<Json<Vec<TrainingRegistration>>, Response> {
+    let registrations = training_service
+        .get_user_training_registrations(user_id)
+        .await
+        .http_err("get user training registrations")?;
+
+    Ok(Json(registrations))
+}
+
+async fn get_training_registrations(
+    State(training_service): State<TrainingService>,
+    Path(training_id): Path<Uuid>,
+) -> Result<Json<Vec<TrainingRegistration>>, Response> {
+    let registrations = training_service
+        .get_training_registrations(training_id)
+        .await
+        .http_err("get training registrations")?;
+
+    Ok(Json(registrations))
+}
+
+async fn delete_training_registration(
+    State(training_service): State<TrainingService>,
+    Path((training_id, user_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<String>, Response> {
+    training_service
+        .delete_training_registration(training_id, user_id)
+        .await
+        .http_err("delete training registration")?;
+
+    Ok(Json(
+        "Training registration deleted successfully".to_string(),
+    ))
 }
 
 async fn create_training(

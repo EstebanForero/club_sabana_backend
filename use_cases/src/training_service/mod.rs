@@ -29,6 +29,34 @@ impl TrainingService {
         }
     }
 
+    pub async fn get_training_registrations(
+        &self,
+        training_id: Uuid,
+    ) -> Result<Vec<TrainingRegistration>> {
+        self.registration_repo
+            .get_training_registrations(training_id)
+            .await
+    }
+
+    pub async fn get_user_training_registrations(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<TrainingRegistration>> {
+        self.registration_repo
+            .get_user_training_registrations(user_id)
+            .await
+    }
+
+    pub async fn delete_training_registration(
+        &self,
+        training_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<()> {
+        self.registration_repo
+            .delete_training_registration(training_id, user_id)
+            .await
+    }
+
     pub async fn create_training(&self, training_creation: &TrainingCreation) -> Result<()> {
         if training_creation.start_datetime >= training_creation.end_datetime {
             return Err(Error::InvalidDates);

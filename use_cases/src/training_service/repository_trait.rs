@@ -27,4 +27,11 @@ pub trait TrainingRegistrationRepository {
         user_id: Uuid,
         attended: bool,
     ) -> Result<()>;
+
+    async fn get_user_training_registrations(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<TrainingRegistration>>;
+
+    async fn delete_training_registration(&self, training_id: Uuid, user_id: Uuid) -> Result<()>;
 }

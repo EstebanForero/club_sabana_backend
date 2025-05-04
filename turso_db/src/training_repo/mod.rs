@@ -12,9 +12,10 @@ use crate::TursoDb;
 #[async_trait]
 impl TrainingRepository for TursoDb {
     async fn create_training(&self, training: &Training) -> Result<()> {
-        self.execute_with_error("INSERT INTO 
+        self.execute_with_error(
+            "INSERT INTO 
 training (id_training, name, start_datetime, end_datetime, minimum_payment, id_category) 
-VALUES (id_training = 1?, name = 2?, start_datetime = 3?, end_datetime = 4?, minimum_payment = 5?, id_category = 6?)",
+VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 training.id_training.to_string(),
                 *training.name,
@@ -29,13 +30,15 @@ VALUES (id_training = 1?, name = 2?, start_datetime = 3?, end_datetime = 4?, min
                 training.minimum_payment,
                 training.id_category.to_string()
             ],
- Error::UnknownDatabaseError).await
+            Error::UnknownDatabaseError,
+        )
+        .await
     }
 
     async fn get_training_by_id(&self, id: Uuid) -> Result<Option<Training>> {
         self.query_one_with_error(
             "SELECT id_training, name, start_datetime, end_datetime, minimum_payment, id_category
-FROM training WHERE id_training = 1?",
+FROM training WHERE id_training = ?1",
             params![id.to_string()],
             Error::UnknownDatabaseError,
         )
@@ -44,8 +47,8 @@ FROM training WHERE id_training = 1?",
 
     async fn update_training(&self, training: &Training) -> Result<()> {
         self.execute_with_error(
-            "UPDATE training SET name = 2?, start_datetime = 3?, end_datetime = 4?,
-minimum_payment = 5? = 6?, id_category = 7? WHERE id_training = 1?",
+            "UPDATE training SET name = ?2, start_datetime = ?3, end_datetime = ?4,
+minimum_payment = ?5 = ?6, id_category = ?7 WHERE id_training = ?1",
             params![
                 training.id_training.to_string(),
                 *training.name,
@@ -67,7 +70,7 @@ minimum_payment = 5? = 6?, id_category = 7? WHERE id_training = 1?",
 
     async fn delete_training(&self, id: Uuid) -> Result<()> {
         self.execute_with_error(
-            "UPDATE training SET deleted = 1 WHERE id_training = 1?",
+            "UPDATE training SET deleted = 1 WHERE id_training = ?1",
             params![id.to_string()],
             Error::UnknownDatabaseError,
         )
@@ -76,15 +79,37 @@ minimum_payment = 5? = 6?, id_category = 7? WHERE id_training = 1?",
 
     async fn list_trainings(&self) -> Result<Vec<Training>> {
         self.query_many_with_error("SELECT id_training, name, start_datetime, end_datetime, minimum_payment, id_category FROM
-training", params![], Error::UnknownDatabaseError).await
+training WHERE deleted = 0", params![], Error::UnknownDatabaseError).await
     }
 }
 
 #[async_trait]
 impl TrainingRegistrationRepository for TursoDb {
+    async fn get_user_training_registrations(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<TrainingRegistration>> {
+        self.query_many_with_error(
+            "SELECT id_user, registration_datetime, attended, attendance_datetime, id_training
+             FROM training_registration WHERE id_user = ?1",
+            params![user_id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
+    async fn delete_training_registration(&self, training_id: Uuid, user_id: Uuid) -> Result<()> {
+        self.execute_with_error(
+            "DELETE FROM training_registration WHERE id_training = ?1 AND id_user = ?2",
+            params![training_id.to_string(), user_id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
     async fn register_user_for_training(&self, registration: &TrainingRegistration) -> Result<()> {
         self.execute_with_error("INSERT INTO training_registration (id_user, registration_datetime, attended, attendance_time, id_training)
-VALUES (id_user = 1?, registration_datetime = 2?, attended = 3?, attendance_time = 4?, id_training = 5? = 6?)", params![
+VALUES (id_user = 1?, registration_datetime = ?2, attended = ?3, attendance_time = ?4, id_training = ?5 = ?6)", params![
     registration.id_user.to_string(),
     registration.registration_datetime
                     .format("%Y-%m-%d %H:%M:%S")
@@ -103,7 +128,7 @@ VALUES (id_user = 1?, registration_datetime = 2?, attended = 3?, attendance_time
     ) -> Result<Vec<TrainingRegistration>> {
         self.query_many_with_error(
             "SELECT id_user, registration_datetime, attended, attendance_time, id_training
-FROM training_registration WHERE id_training = 1?",
+FROM training_registration WHERE id_training = ?1",
             params![training_id.to_string()],
             Error::UnknownDatabaseError,
         )
@@ -117,7 +142,7 @@ FROM training_registration WHERE id_training = 1?",
         attended: bool,
     ) -> Result<()> {
         self.execute_with_error(
-            "UPDATE training_registration SET attended = 1? WHERE training_id: 2?, user_id: 3?",
+            "UPDATE training_registration SET attended = ?1 WHERE training_id: ?2, user_id: ?3",
             params![attended, training_id.to_string(), user_id.to_string()],
             Error::UnknownDatabaseError,
         )

@@ -250,6 +250,36 @@ impl TournamentService {
             .await
     }
 
+    pub async fn delete_attendance(&self, tournament_id: Uuid, user_id: Uuid) -> Result<()> {
+        if self
+            .tournament_repo
+            .get_tournament_by_id(tournament_id)
+            .await?
+            .is_none()
+        {
+            return Err(Error::TournamentNotFound);
+        }
+
+        self.attendance_repo
+            .delete_attendance(tournament_id, user_id)
+            .await
+    }
+
+    pub async fn delete_registration(&self, tournament_id: Uuid, user_id: Uuid) -> Result<()> {
+        if self
+            .tournament_repo
+            .get_tournament_by_id(tournament_id)
+            .await?
+            .is_none()
+        {
+            return Err(Error::TournamentNotFound);
+        }
+
+        self.registration_repo
+            .delete_registration(tournament_id, user_id)
+            .await
+    }
+
     pub async fn get_user_attendance(&self, user_id: Uuid) -> Result<Vec<TournamentAttendance>> {
         let all_tournaments = self.tournament_repo.list_tournaments().await?;
         let mut user_attendance = Vec::new();

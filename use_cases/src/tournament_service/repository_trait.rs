@@ -24,6 +24,7 @@ pub trait TournamentRegistrationRepository: Send + Sync {
         tournament_id: Uuid,
     ) -> Result<Vec<TournamentRegistration>>;
     async fn get_user_registrations(&self, user_id: Uuid) -> Result<Vec<TournamentRegistration>>;
+    async fn delete_registration(&self, tournament_id: Uuid, user_id: Uuid) -> Result<()>;
 }
 
 #[async_trait]
@@ -39,4 +40,5 @@ pub trait TournamentAttendanceRepository: Send + Sync {
         user_id: Uuid,
         position: i32,
     ) -> Result<()>;
+    async fn delete_attendance(&self, tournament_id: Uuid, user_id: Uuid) -> Result<()>;
 }

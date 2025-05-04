@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
     Json, Router, ServiceExt,
 };
 use entities::tournament::{
@@ -50,11 +50,43 @@ pub fn tournament_router(tournament_service: TournamentService) -> Router {
             "/tournaments/users/{id}/attendance",
             get(get_user_attendance),
         )
+        .route(
+            "/tournaments/{tournament_id}/attendance/{user_id}",
+            delete(delete_attendance),
+        )
+        .route(
+            "/tournaments/{tournament_id}/registrations/{user_id}",
+            delete(delete_registration),
+        )
         .with_state(tournament_service)
 }
 
 async fn alive() -> &'static str {
     "Tournament service is alive"
+}
+
+async fn delete_attendance(
+    State(tournament_service): State<TournamentService>,
+    Path((tournament_id, user_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<String>, Response> {
+    tournament_service
+        .delete_attendance(tournament_id, user_id)
+        .await
+        .http_err("delete attendance")?;
+
+    Ok(Json("Attendance deleted successfully".to_string()))
+}
+
+async fn delete_registration(
+    State(tournament_service): State<TournamentService>,
+    Path((tournament_id, user_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<String>, Response> {
+    tournament_service
+        .delete_registration(tournament_id, user_id)
+        .await
+        .http_err("delete registration")?;
+
+    Ok(Json("Registration deleted successfully".to_string()))
 }
 
 async fn create_tournament(

@@ -222,6 +222,16 @@ impl TournamentRegistrationRepository for TursoDb {
         .await
     }
 
+    async fn delete_registration(&self, tournament_id: Uuid, user_id: Uuid) -> Result<()> {
+        self.execute_with_error(
+            "DELETE FROM tournament_registration
+             WHERE id_tournament = ?1 AND id_user = ?2",
+            params![tournament_id.to_string(), user_id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
     // async fn get_tournament_registrations(
     //     &self,
     //     tournament_id: Uuid,
@@ -258,6 +268,16 @@ impl TournamentRegistrationRepository for TursoDb {
 
 #[async_trait]
 impl TournamentAttendanceRepository for TursoDb {
+    async fn delete_attendance(&self, tournament_id: Uuid, user_id: Uuid) -> Result<()> {
+        self.execute_with_error(
+            "DELETE FROM tournament_attendance 
+             WHERE id_tournament = ?1 AND id_user = ?2",
+            params![tournament_id.to_string(), user_id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
     async fn record_tournament_attendance(&self, attendance: &TournamentAttendance) -> Result<()> {
         let conn = self
             .get_connection()
@@ -349,7 +369,6 @@ mod test {
         tournament::{Tournament, TournamentAttendance, TournamentRegistration},
         user::{URol, User},
     };
-    use libsql::params;
     use rstest::{fixture, rstest};
     use use_cases::{
         category_service::repository_trait::{CategoryRepository, UserCategoryRepository},
@@ -406,7 +425,7 @@ mod test {
             .await
             .expect("Error creating category");
 
-        db.get_user_categories(user.id_user, category_id)
+        db.get_user_categories(user.id_user)
             .await
             .expect("Error getting user category");
 
