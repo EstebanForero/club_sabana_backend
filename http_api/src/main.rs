@@ -4,6 +4,7 @@ use std::{
 };
 
 use axum::Router;
+use report_endpoints::report_router;
 use request_endpoints::request_router;
 use serde::Deserialize;
 use tower_http::cors::CorsLayer;
@@ -13,14 +14,15 @@ use training_endpoints::training_router;
 use tuition_endpoints::tuition_router;
 use turso_db::TursoDb;
 use use_cases::{
-    category_service::CategoryService, request_service::RequestService,
-    tournament_service::TournamentService, training_service::TrainingService,
-    tuition_service::TuitionService, user_service::UserService,
+    category_service::CategoryService, report_service::ReportService,
+    request_service::RequestService, tournament_service::TournamentService,
+    training_service::TrainingService, tuition_service::TuitionService, user_service::UserService,
 };
 
 mod auth;
 mod category_endpoints;
 mod err;
+mod report_endpoints;
 mod request_endpoints;
 mod tournament_endpoints;
 mod training_endpoints;
@@ -79,13 +81,23 @@ async fn main() {
         category_service.clone(),
     );
 
+    let report_service = ReportService::new(
+        user_service.clone(),
+        category_service.clone(),
+        training_service.clone(),
+        tournament_service.clone(),
+        tuition_service.clone(),
+        request_service.clone(),
+    );
+
     main_router = main_router
         .merge(user_endpoints::user_router(user_service, &config.token_key))
         .merge(tournament_endpoints::tournament_router(tournament_service))
         .merge(category_endpoints::category_router(category_service))
         .merge(training_router(training_service))
         .merge(request_router(request_service, config.token_key.clone()))
-        .merge(tuition_router(tuition_service, config.token_key));
+        .merge(tuition_router(tuition_service, config.token_key))
+        .merge(report_router(report_service));
 
     let cors_layer = CorsLayer::permissive();
 
