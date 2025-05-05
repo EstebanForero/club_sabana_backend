@@ -1,5 +1,6 @@
 use super::err::Result;
 use async_trait::async_trait;
+use chrono::NaiveDateTime;
 use entities::training::{Training, TrainingRegistration};
 use uuid::Uuid;
 
@@ -26,6 +27,7 @@ pub trait TrainingRegistrationRepository {
         training_id: Uuid,
         user_id: Uuid,
         attended: bool,
+        attendance_date: NaiveDateTime,
     ) -> Result<()>;
 
     async fn get_user_training_registrations(

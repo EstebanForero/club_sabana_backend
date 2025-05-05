@@ -23,7 +23,10 @@ pub fn training_router(training_service: TrainingService) -> Router {
                 .delete(delete_training),
         )
         .route("/trainings/{id}/register", post(register_user))
-        .route("/trainings/{id}/attendance", post(mark_attendance))
+        .route(
+            "/trainings/{id}/attendance/{user_id}",
+            post(mark_attendance),
+        )
         .route(
             "/users/{id}/eligible-trainings",
             get(get_eligible_trainings),

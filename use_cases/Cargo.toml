@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 async-trait = "0.1.86"
 chrono = "0.4.39"
+chrono-tz = "0.10.3"
 entities = { path = "../entities" }
 thiserror = "2.0.11"
 tracing = "0.1.41"

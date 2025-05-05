@@ -1,6 +1,8 @@
 pub mod err;
 pub mod repository_trait;
 
+use chrono::{NaiveDateTime, Utc};
+use chrono_tz::America::Bogota;
 use err::{Error, Result};
 use repository_trait::{TrainingRegistrationRepository, TrainingRepository};
 
@@ -142,7 +144,6 @@ impl TrainingService {
         user_id: Uuid,
         attended: bool,
     ) -> Result<()> {
-        // Check if training exists
         if self
             .training_repo
             .get_training_by_id(training_id)
@@ -152,7 +153,6 @@ impl TrainingService {
             return Err(Error::TrainingNotFound);
         }
 
-        // Check if user is registered
         let registrations = self
             .registration_repo
             .get_training_registrations(training_id)
@@ -161,8 +161,10 @@ impl TrainingService {
             return Err(Error::UserNotRegistered);
         }
 
+        let attendance_date = get_bogota_now();
+
         self.registration_repo
-            .mark_training_attendance(training_id, user_id, attended)
+            .mark_training_attendance(training_id, user_id, attended, attendance_date)
             .await
     }
 
@@ -182,4 +184,9 @@ impl TrainingService {
 
         Ok(eligible_trainings)
     }
+}
+
+fn get_bogota_now() -> NaiveDateTime {
+    let bogota_time = Utc::now().with_timezone(&Bogota);
+    bogota_time.naive_local()
 }

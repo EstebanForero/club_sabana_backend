@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::NaiveDateTime;
 use entities::training::{Training, TrainingRegistration};
 use libsql::params;
 use use_cases::training_service::{
@@ -47,10 +48,9 @@ FROM training WHERE id_training = ?1",
 
     async fn update_training(&self, training: &Training) -> Result<()> {
         self.execute_with_error(
-            "UPDATE training SET name = ?2, start_datetime = ?3, end_datetime = ?4,
-minimum_payment = ?5 = ?6, id_category = ?7 WHERE id_training = ?1",
+            "UPDATE training SET name = ?1, start_datetime = ?2, end_datetime = ?3,
+minimum_payment = ?4, id_category = ?5 WHERE id_training = ?6",
             params![
-                training.id_training.to_string(),
                 *training.name,
                 training
                     .start_datetime
@@ -61,7 +61,8 @@ minimum_payment = ?5 = ?6, id_category = ?7 WHERE id_training = ?1",
                     .format("%Y-%m-%d %H:%M:%S")
                     .to_string(),
                 training.minimum_payment,
-                training.id_category.to_string()
+                training.id_category.to_string(),
+                training.id_training.to_string(),
             ],
             Error::UnknownDatabaseError,
         )
@@ -140,12 +141,14 @@ FROM training_registration WHERE id_training = ?1",
         training_id: Uuid,
         user_id: Uuid,
         attended: bool,
+        attendance_date: NaiveDateTime,
     ) -> Result<()> {
         self.execute_with_error(
-            "UPDATE training_registration SET attended = ?1 WHERE training_id: ?2, user_id: ?3",
-            params![attended, training_id.to_string(), user_id.to_string()],
-            Error::UnknownDatabaseError,
-        )
-        .await
+        "UPDATE training_registration SET attended = ?1, attendance_datetime = ?4 WHERE id_training = ?2 AND id_user = ?3",
+        params![attended, training_id.to_string(), user_id.to_string(), attendance_date.format("%Y-%m-%d %H:%M:%S")
+                    .to_string()],
+        Error::UnknownDatabaseError,
+    )
+    .await
     }
 }
