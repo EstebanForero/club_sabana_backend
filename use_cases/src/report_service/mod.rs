@@ -1,16 +1,18 @@
+use std::error::Error;
+
 use crate::{
-    category_service::CategoryService, request_service::RequestService,
-    tournament_service::TournamentService, training_service::TrainingService,
-    tuition_service::TuitionService, user_service::UserService,
+    category_service::{self, CategoryService},
+    request_service::RequestService,
+    tournament_service::TournamentService,
+    training_service::TrainingService,
+    tuition_service::TuitionService,
+    user_service::UserService,
 };
-use entities::{
-    report::{
-        Report, TournamentSummary, TrainingSummary, TuitionSummary, UserCategory, UserRequest,
-    },
-    user::UserInfo,
+use entities::report::{
+    Report, TournamentSummary, TrainingSummary, TuitionSummary, UserCategory, UserRequest,
 };
 use err::ReportError;
-use std::sync::Arc;
+use futures::future::try_join_all;
 use uuid::Uuid;
 
 pub mod err;
@@ -48,7 +50,7 @@ impl ReportService {
     pub async fn generate_user_report(&self, user_id: Uuid) -> Result<Report, ReportError> {
         let (
             user,
-            categories,
+            user_categories,
             training_registrations,
             tournament_registrations,
             tournament_attendances,
@@ -99,13 +101,24 @@ impl ReportService {
             },
         )?;
 
-        let categories = categories
-            .into_iter()
-            .map(|uc| UserCategory {
-                category_name: uc.id_category.to_string(),
-                user_level: uc.user_level.to_string(),
-            })
-            .collect();
+        let category_futures = user_categories.into_iter().map(|uc| {
+            let category_service = self.category_service.clone();
+            async move {
+                let category = category_service
+                    .get_category_by_id(uc.id_category)
+                    .await
+                    .map_err(ReportError::from)?;
+                Ok(UserCategory {
+                    category_name: category.name,
+                    user_level: uc.user_level.to_string(),
+                })
+            }
+        });
+        let categories = try_join_all(category_futures)
+            .await
+            .map_err(|_: ReportError| {
+                ReportError::ReportServiceError("Error getting the categories names".to_string())
+            })?;
 
         let training_summary = TrainingSummary {
             total_registrations: training_registrations.len() as u32,

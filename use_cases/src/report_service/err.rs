@@ -19,4 +19,7 @@ pub enum ReportError {
 
     #[error("Request service error: {0}")]
     RequestServiceError(#[from] crate::request_service::err::Error),
+
+    #[error("Report service error: {0}")]
+    ReportServiceError(String),
 }
