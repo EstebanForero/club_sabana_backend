@@ -9,7 +9,7 @@ pub trait TournamentRepository: Send + Sync {
     async fn create_tournament(&self, tournament: &Tournament) -> Result<()>;
     async fn get_tournament_by_id(&self, id: Uuid) -> Result<Option<Tournament>>;
     async fn update_tournament(&self, tournament: &Tournament) -> Result<()>;
-    async fn delete_tournament(&self, id: Uuid) -> Result<()>; // Soft delete
+    async fn delete_tournament(&self, id: Uuid) -> Result<()>;
     async fn list_tournaments(&self) -> Result<Vec<Tournament>>;
 }
 
@@ -23,6 +23,12 @@ pub trait TournamentRegistrationRepository: Send + Sync {
         &self,
         tournament_id: Uuid,
     ) -> Result<Vec<TournamentRegistration>>;
+    async fn get_tournament_registration(
+        // New
+        &self,
+        tournament_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<Option<TournamentRegistration>>;
     async fn get_user_registrations(&self, user_id: Uuid) -> Result<Vec<TournamentRegistration>>;
     async fn delete_registration(&self, tournament_id: Uuid, user_id: Uuid) -> Result<()>;
 }
@@ -34,6 +40,12 @@ pub trait TournamentAttendanceRepository: Send + Sync {
         &self,
         tournament_id: Uuid,
     ) -> Result<Vec<TournamentAttendance>>;
+    async fn get_tournament_attendance_by_user(
+        // New
+        &self,
+        tournament_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<Option<TournamentAttendance>>;
     async fn update_tournament_position(
         &self,
         tournament_id: Uuid,

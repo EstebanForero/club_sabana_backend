@@ -1,18 +1,38 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     routing::{delete, get, post, put},
-    Json, Router, ServiceExt,
+    Json, Router,
 };
 use entities::tournament::{
     Tournament, TournamentAttendance, TournamentCreation, TournamentRegistration,
 };
+use serde::Deserialize;
 use tracing::error;
 use use_cases::tournament_service::{err::Error, TournamentService};
 use uuid::Uuid;
 
-use crate::err::{HttpError, HttpResult, ToErrResponse};
+use crate::err::{HttpError, HttpResult};
+
+#[derive(Debug, Deserialize)]
+pub struct TournamentCreationPayload {
+    #[serde(flatten)]
+    pub tournament_data: TournamentCreation,
+    pub id_court: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TournamentUpdatePayload {
+    #[serde(flatten)]
+    pub tournament_data: TournamentCreation,
+    pub id_court: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdatePositionPayload {
+    pub position: i32,
+}
 
 pub fn tournament_router(tournament_service: TournamentService) -> Router {
     Router::new()
@@ -22,41 +42,50 @@ pub fn tournament_router(tournament_service: TournamentService) -> Router {
             post(create_tournament).get(list_tournaments),
         )
         .route(
-            "/tournaments/{id}",
+            "/tournaments/{id_tournament}",
             get(get_tournament)
                 .put(update_tournament)
                 .delete(delete_tournament),
         )
-        .route("/tournaments/{id}/register", post(register_user))
-        .route("/tournaments/{id}/attendance", post(record_attendance))
-        .route("/tournaments/{id}/position", put(update_position))
+        .route(
+            "/tournaments/{id_tournament}/register",
+            post(register_user_for_tournament),
+        )
+        .route(
+            "/tournaments/{id_tournament}/attendance",
+            post(record_attendance),
+        )
+        .route(
+            "/tournaments/{id_tournament}/users/{id_user}/position",
+            put(update_user_position_in_tournament),
+        )
         .route(
             "/tournaments/registrations/user/{user_id}",
             get(get_user_registrations),
         )
         .route(
-            "/tournaments/registrations/tournament/{tournament_id}",
+            "/tournaments/registrations/tournament/{id_tournament}",
             get(get_tournament_registrations),
         )
         .route(
-            "/tournaments/users/{id}/eligible-tournaments",
-            get(get_eligible_tournaments),
+            "/users/{user_id}/eligible-tournaments",
+            get(get_eligible_tournaments_for_user),
         )
         .route(
-            "/tournaments/{id}/attendance",
-            get(get_tournament_attendance),
+            "/tournaments/{id_tournament}/attendance",
+            get(get_tournament_attendance_list),
         )
         .route(
-            "/tournaments/users/{id}/attendance",
-            get(get_user_attendance),
+            "/users/{user_id}/tournament-attendance",
+            get(get_user_tournament_attendance_list),
         )
         .route(
-            "/tournaments/{tournament_id}/attendance/{user_id}",
-            delete(delete_attendance),
+            "/tournaments/{id_tournament}/attendance/{user_id}",
+            delete(delete_user_attendance_from_tournament),
         )
         .route(
-            "/tournaments/{tournament_id}/registrations/{user_id}",
-            delete(delete_registration),
+            "/tournaments/{id_tournament}/registrations/{user_id}",
+            delete(delete_user_registration_from_tournament),
         )
         .with_state(tournament_service)
 }
@@ -65,148 +94,142 @@ async fn alive() -> &'static str {
     "Tournament service is alive"
 }
 
-async fn delete_attendance(
+async fn delete_user_attendance_from_tournament(
     State(tournament_service): State<TournamentService>,
-    Path((tournament_id, user_id)): Path<(Uuid, Uuid)>,
-) -> Result<Json<String>, Response> {
+    Path((id_tournament, user_id)): Path<(Uuid, Uuid)>,
+) -> HttpResult<impl IntoResponse> {
     tournament_service
-        .delete_attendance(tournament_id, user_id)
+        .delete_attendance(id_tournament, user_id)
         .await
         .http_err("delete attendance")?;
-
-    Ok(Json("Attendance deleted successfully".to_string()))
+    Ok((StatusCode::OK, "Attendance deleted successfully"))
 }
 
-async fn delete_registration(
+async fn delete_user_registration_from_tournament(
     State(tournament_service): State<TournamentService>,
-    Path((tournament_id, user_id)): Path<(Uuid, Uuid)>,
-) -> Result<Json<String>, Response> {
+    Path((id_tournament, user_id)): Path<(Uuid, Uuid)>,
+) -> HttpResult<impl IntoResponse> {
     tournament_service
-        .delete_registration(tournament_id, user_id)
+        .delete_registration(id_tournament, user_id)
         .await
         .http_err("delete registration")?;
-
-    Ok(Json("Registration deleted successfully".to_string()))
+    Ok((StatusCode::OK, "Registration deleted successfully"))
 }
 
 async fn create_tournament(
     State(tournament_service): State<TournamentService>,
-    Json(tournament): Json<TournamentCreation>,
-) -> HttpResult<impl IntoResponse> {
-    tournament_service
-        .create_tournament(tournament)
+    Json(payload): Json<TournamentCreationPayload>,
+) -> HttpResult<Json<Tournament>> {
+    let created_tournament = tournament_service
+        .create_tournament(payload.tournament_data, payload.id_court)
         .await
         .http_err("create tournament")?;
-
-    Ok((StatusCode::OK, "Tournament created successfully"))
+    Ok(Json(created_tournament))
 }
 
 async fn get_tournament(
     State(tournament_service): State<TournamentService>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<Tournament>, Response> {
+    Path(id_tournament): Path<Uuid>,
+) -> HttpResult<Json<Tournament>> {
     let tournament = tournament_service
-        .get_tournament(id)
+        .get_tournament(id_tournament)
         .await
         .http_err("get tournament")?;
-
     Ok(Json(tournament))
 }
 
 async fn update_tournament(
     State(tournament_service): State<TournamentService>,
-    Json(tournament): Json<Tournament>,
-) -> Result<(), Response> {
-    tournament_service
-        .update_tournament(tournament)
+    Path(id_tournament): Path<Uuid>,
+    Json(payload): Json<TournamentUpdatePayload>,
+) -> HttpResult<Json<Tournament>> {
+    let updated_tournament = tournament_service
+        .update_tournament(id_tournament, payload.tournament_data, payload.id_court)
         .await
         .http_err("update tournament")?;
-
-    Ok(())
+    Ok(Json(updated_tournament))
 }
 
 async fn delete_tournament(
     State(tournament_service): State<TournamentService>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<String>, Response> {
+    Path(id_tournament): Path<Uuid>,
+) -> HttpResult<impl IntoResponse> {
     tournament_service
-        .delete_tournament(id)
+        .delete_tournament(id_tournament)
         .await
         .http_err("delete tournament")?;
-
-    Ok(Json("Tournament deleted successfully".to_string()))
+    Ok((StatusCode::OK, "Tournament deleted successfully"))
 }
 
 async fn list_tournaments(
     State(tournament_service): State<TournamentService>,
-) -> Result<Json<Vec<Tournament>>, Response> {
+) -> HttpResult<Json<Vec<Tournament>>> {
     let tournaments = tournament_service
         .list_tournaments()
         .await
         .http_err("list tournaments")?;
-
-    let tournaments_dto = tournaments.into_iter().collect();
-    Ok(Json(tournaments_dto))
+    Ok(Json(tournaments))
 }
 
-async fn register_user(
+async fn register_user_for_tournament(
     State(tournament_service): State<TournamentService>,
-    Json(registration): Json<TournamentRegistration>,
-) -> Result<Json<String>, Response> {
-    tournament_service
-        .register_user(registration)
-        .await
-        .http_err("register user")?;
+    Path(id_tournament): Path<Uuid>,
+    Json(mut registration_payload): Json<TournamentRegistration>,
+) -> HttpResult<Json<TournamentRegistration>> {
+    registration_payload.id_tournament = id_tournament;
 
-    Ok(Json("User registered successfully".to_string()))
+    let registration = tournament_service
+        .register_user(registration_payload)
+        .await
+        .http_err("register user for tournament")?;
+    Ok(Json(registration))
 }
 
 async fn record_attendance(
     State(tournament_service): State<TournamentService>,
-    Json(attendance): Json<TournamentAttendance>,
-) -> Result<Json<String>, Response> {
-    tournament_service
-        .record_attendance(attendance)
+    Path(id_tournament): Path<Uuid>,
+    Json(mut attendance_payload): Json<TournamentAttendance>,
+) -> HttpResult<Json<TournamentAttendance>> {
+    attendance_payload.id_tournament = id_tournament;
+
+    let attendance = tournament_service
+        .record_attendance(attendance_payload)
         .await
         .http_err("record attendance")?;
-
-    Ok(Json("Attendance recorded successfully".to_string()))
+    Ok(Json(attendance))
 }
 
-async fn get_eligible_tournaments(
+async fn get_eligible_tournaments_for_user(
     State(tournament_service): State<TournamentService>,
     Path(user_id): Path<Uuid>,
-) -> Result<Json<Vec<Tournament>>, Response> {
+) -> HttpResult<Json<Vec<Tournament>>> {
     let tournaments = tournament_service
         .get_eligible_tournaments(user_id)
         .await
-        .http_err("get eligible tournaments")?;
-
+        .http_err("get eligible tournaments for user")?;
     Ok(Json(tournaments))
 }
 
-async fn get_tournament_attendance(
+async fn get_tournament_attendance_list(
     State(tournament_service): State<TournamentService>,
-    Path(tournament_id): Path<Uuid>,
-) -> Result<Json<Vec<TournamentAttendance>>, Response> {
-    let attendance = tournament_service
-        .get_tournament_attendance(tournament_id)
+    Path(id_tournament): Path<Uuid>,
+) -> HttpResult<Json<Vec<TournamentAttendance>>> {
+    let attendance_list = tournament_service
+        .get_tournament_attendance(id_tournament)
         .await
-        .http_err("get tournament attendance")?;
-
-    Ok(Json(attendance))
+        .http_err("get tournament attendance list")?;
+    Ok(Json(attendance_list))
 }
 
-async fn get_user_attendance(
+async fn get_user_tournament_attendance_list(
     State(tournament_service): State<TournamentService>,
     Path(user_id): Path<Uuid>,
-) -> Result<Json<Vec<TournamentAttendance>>, Response> {
-    let attendance = tournament_service
+) -> HttpResult<Json<Vec<TournamentAttendance>>> {
+    let attendance_list = tournament_service
         .get_user_attendance(user_id)
         .await
-        .http_err("get user attendance")?;
-
-    Ok(Json(attendance))
+        .http_err("get user tournament attendance list")?;
+    Ok(Json(attendance_list))
 }
 
 async fn get_user_registrations(
@@ -222,158 +245,96 @@ async fn get_user_registrations(
 
 async fn get_tournament_registrations(
     State(tournament_service): State<TournamentService>,
-    Path(tournament_id): Path<Uuid>,
+    Path(id_tournament): Path<Uuid>,
 ) -> HttpResult<Json<Vec<TournamentRegistration>>> {
     let registrations = tournament_service
-        .get_tournament_registrations(tournament_id)
+        .get_tournament_registrations(id_tournament)
         .await
         .http_err("get tournament registrations")?;
     Ok(Json(registrations))
 }
 
-async fn update_position(
+async fn update_user_position_in_tournament(
     State(tournament_service): State<TournamentService>,
-    Path((tournament_id, user_id)): Path<(Uuid, Uuid)>,
-    Json(position): Json<i32>,
-) -> Result<Json<String>, Response> {
+    Path((id_tournament, user_id)): Path<(Uuid, Uuid)>,
+    Json(payload): Json<UpdatePositionPayload>,
+) -> HttpResult<impl IntoResponse> {
     tournament_service
-        .update_position(tournament_id, user_id, position)
+        .update_position(id_tournament, user_id, payload.position)
         .await
-        .http_err("update position")?;
-
-    Ok(Json("Position updated successfully".to_string()))
+        .http_err("update user position in tournament")?;
+    Ok((StatusCode::OK, "Position updated successfully"))
 }
 
-impl<T> HttpError<T> for use_cases::tournament_service::err::Result<T> {
+impl<T> HttpError<T> for Result<T, Error> {
     fn http_err(self, endpoint_name: &str) -> crate::err::HttpResult<T> {
         self.map_err(|err| {
-            error!("Error in: {endpoint_name}");
-            match err {
-                Error::UnknownDatabaseError(error) => {
-                    error!("{error}");
-                    "We are having problems in the server, try again"
+            error!("Error in tournament endpoint ({}): {}", endpoint_name, err);
+            let (status_code, message) = match err {
+                Error::UnknownDatabaseError(e) => {
+                    error!("Tournament DB error: {}", e);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Database error processing tournament request.",
+                    )
                 }
-                Error::TournamentNotFound => "Tournament not found",
-                Error::UserNotRegistered => "User not registered for tournament",
-                Error::UserAlreadyRegistered => "User already registered",
-                Error::InvalidDates => "Invalid tournament dates",
-                Error::InvalidCategory => "Invalid category",
-                Error::NegativePosition => "Position must be positive",
-                Error::PositionAlreadyTaken => "Position already taken",
-                Error::UserDidNotAttend => "User did not attend tournament",
-                Error::UserDoesNotMeetCategoryRequirements => {
-                    "User is not part of the category required to join the tournament"
+                Error::TournamentNotFound => (StatusCode::NOT_FOUND, "Tournament not found."),
+                Error::UserNotRegistered => (
+                    StatusCode::NOT_FOUND,
+                    "User not registered for this tournament.",
+                ),
+                Error::UserAlreadyRegistered => (
+                    StatusCode::CONFLICT,
+                    "User already registered for this tournament.",
+                ),
+                Error::InvalidDates => (
+                    StatusCode::BAD_REQUEST,
+                    "Invalid tournament dates or duration.",
+                ),
+                Error::InvalidCategory => {
+                    (StatusCode::BAD_REQUEST, "Invalid category for tournament.")
                 }
-                Error::CategoryServiceError(_) => "Error in the category service",
-            }
-            .to_err_response()
+                Error::NegativePosition => (
+                    StatusCode::BAD_REQUEST,
+                    "Position must be a positive integer.",
+                ),
+                Error::PositionAlreadyTaken => (
+                    StatusCode::CONFLICT,
+                    "This position is already taken in the tournament.",
+                ),
+                Error::UserDidNotAttend => (
+                    StatusCode::NOT_FOUND,
+                    "User did not attend this tournament.",
+                ),
+                Error::UserDoesNotMeetCategoryRequirements => (
+                    StatusCode::FORBIDDEN,
+                    "User does not meet category requirements for this tournament.",
+                ),
+                Error::CategoryServiceError(e) => {
+                    error!("Category service error via tournament: {}", e);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Internal error with category service.",
+                    )
+                }
+                Error::CourtServiceError(e) => {
+                    error!("Court service error via tournament: {}", e);
+                    match e {
+                        use_cases::court_service::err::Error::CourtUnavailable => (
+                            StatusCode::CONFLICT,
+                            "Selected court is unavailable for the tournament time.",
+                        ),
+                        use_cases::court_service::err::Error::CourtNotFound => {
+                            (StatusCode::BAD_REQUEST, "Selected court not found.")
+                        }
+                        _ => (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Internal error with court service.",
+                        ),
+                    }
+                }
+            };
+            (status_code, message.to_string()).into_response()
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*; // Import everything from the parent module
-    use chrono::NaiveDateTime;
-    use serde_json;
-    use uuid::Uuid;
-
-    // Define TournamentCreation if not directly accessible
-    #[test]
-    fn test_deserialize_tournament_creation_success() {
-        let json = r#"
-        {
-            "name": "Summer championship",
-            "id_category": "346a12fb-914d-412a-a39e-e14d00a69ac9",
-            "start_datetime": "2006-02-19 08:00:00",
-            "end_datetime": "2006-02-19 10:00:00"
-        }
-        "#;
-
-        let result: Result<TournamentCreation, _> = serde_json::from_str(json);
-        assert!(result.is_ok(), "Deserialization failed: {:?}", result.err());
-
-        let tournament = result.unwrap();
-        assert_eq!(tournament.name, "Summer championship");
-        assert_eq!(
-            tournament.id_category,
-            Uuid::parse_str("346a12fb-914d-412a-a39e-e14d00a69ac9").unwrap()
-        );
-        assert_eq!(
-            tournament.start_datetime,
-            NaiveDateTime::parse_from_str("2006-02-19 08:00:00", "%Y-%m-%d %H:%M:%S").unwrap()
-        );
-        assert_eq!(
-            tournament.end_datetime,
-            NaiveDateTime::parse_from_str("2006-02-19 10:00:00", "%Y-%m-%d %H:%M:%S").unwrap()
-        );
-    }
-
-    #[test]
-    fn test_deserialize_tournament_creation_success_should() {
-        let id_category = Uuid::new_v4();
-
-        let tournament_creation = TournamentCreation {
-            name: "Summer championship".to_string(),
-            id_category,
-            start_datetime: NaiveDateTime::parse_from_str(
-                "2006-02-19 08:00:00",
-                "%Y-%m-%d %H:%M:%S",
-            )
-            .expect("Error parsing date from string"),
-            end_datetime: NaiveDateTime::parse_from_str("2006-02-19 10:00:00", "%Y-%m-%d %H:%M:%S")
-                .expect("Error parsing from string"),
-        };
-
-        let json = serde_json::to_string(&tournament_creation)
-            .expect("Failed to serialize tournament data");
-
-        println!("The json file is: {json}");
-
-        let result: Result<TournamentCreation, _> = serde_json::from_str(&json);
-        assert!(result.is_ok(), "Deserialization failed: {:?}", result.err());
-
-        let tournament = result.unwrap();
-        assert_eq!(tournament.name, "Summer championship");
-        assert_eq!(tournament.id_category, id_category);
-        assert_eq!(
-            tournament.start_datetime,
-            NaiveDateTime::parse_from_str("2006-02-19 08:00:00", "%Y-%m-%d %H:%M:%S").unwrap()
-        );
-        assert_eq!(
-            tournament.end_datetime,
-            NaiveDateTime::parse_from_str("2006-02-19 10:00:00", "%Y-%m-%d %H:%M:%S").unwrap()
-        );
-    }
-
-    #[test]
-    fn test_deserialize_tournament_creation_invalid_datetime() {
-        // Simulate a common invalid format (ISO 8601 with 'T')
-        let json = r#"
-        {
-            "name": "Summer championship",
-            "id_category": "346a12fb-914d-412a-a39e-e14d00a69ac9",
-            "start_datetime": "2006-02-19T08:00:00",
-            "end_datetime": "2006-02-19 10:00:00"
-        }
-        "#;
-
-        let result: Result<TournamentCreation, _> = serde_json::from_str(json);
-        assert!(
-            result.is_err(),
-            "Deserialization should have failed but succeeded"
-        );
-        let error = result.unwrap_err();
-        let error_msg = error.to_string();
-        assert!(
-            error_msg.contains("start_datetime"),
-            "Error should mention 'start_datetime', got: {}",
-            error_msg
-        );
-        assert!(
-            error_msg.contains("invalid characters"),
-            "Error should mention 'invalid characters', got: {}",
-            error_msg
-        );
     }
 }

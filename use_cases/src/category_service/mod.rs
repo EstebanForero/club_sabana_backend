@@ -6,7 +6,6 @@ use entities::{
 use err::{Error, Result};
 use repository_trait::{CategoryRepository, CategoryRequirementRepository, UserCategoryRepository};
 use std::sync::Arc;
-use tracing::info;
 use uuid::Uuid;
 
 use crate::user_service::UserService;
@@ -27,13 +26,13 @@ impl CategoryService {
         category_repo: Arc<dyn CategoryRepository>,
         requirement_repo: Arc<dyn CategoryRequirementRepository>,
         user_category_repo: Arc<dyn UserCategoryRepository>,
-        user_repo: UserService,
+        user_service: UserService,
     ) -> Self {
         Self {
             category_repo,
             requirement_repo,
             user_category_repo,
-            user_service: user_repo,
+            user_service,
         }
     }
 

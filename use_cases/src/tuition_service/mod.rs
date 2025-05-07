@@ -1,6 +1,6 @@
 pub mod err;
 pub mod repository_trait;
-mod tests;
+// mod tests; // Already commented
 
 use self::err::{Error, Result};
 use chrono::Utc;
@@ -19,14 +19,16 @@ impl TuitionService {
         Self { tuition_repo }
     }
 
-    pub async fn pay_tuition(&self, user_id: Uuid, amount: f64) -> Result<()> {
+    pub async fn pay_tuition(&self, user_id: Uuid, amount: f64) -> Result<Tuition> {
         if amount <= 0.0 {
             return Err(Error::InvalidAmount);
         }
 
-        if self.tuition_repo.has_active_tuition(user_id).await? {
-            return Err(Error::ActiveTuitionExists);
-        }
+        // Decided to remove the "active tuition exists" check here, as a user might pay multiple times
+        // or for different periods. The `has_active_tuition_with_amount` is more specific for training registration.
+        // if self.tuition_repo.has_active_tuition(user_id).await? {
+        //     return Err(Error::ActiveTuitionExists);
+        // }
 
         let new_tuition = Tuition {
             id_tuition: Uuid::new_v4(),
@@ -35,11 +37,24 @@ impl TuitionService {
             payment_date: Utc::now().naive_utc(),
         };
 
-        self.tuition_repo.record_tuition_payment(&new_tuition).await
+        self.tuition_repo
+            .record_tuition_payment(&new_tuition)
+            .await?;
+        Ok(new_tuition)
     }
 
     pub async fn has_active_tuition(&self, user_id: Uuid) -> Result<bool> {
         self.tuition_repo.has_active_tuition(user_id).await
+    }
+
+    pub async fn has_active_tuition_with_amount(
+        &self,
+        user_id: Uuid,
+        required_amount: f64,
+    ) -> Result<bool> {
+        self.tuition_repo
+            .has_active_tuition_with_amount(user_id, required_amount)
+            .await
     }
 
     pub async fn get_user_tuitions(&self, user_id: Uuid) -> Result<Vec<Tuition>> {

@@ -1,12 +1,16 @@
 pub mod err;
 pub mod repository_trait;
 
-use crate::category_service::CategoryService;
+use crate::{
+    category_service::CategoryService,
+    court_service::{self, CourtService}, // Added CourtService
+};
 
 use self::err::{Error, Result};
-use chrono::{Local, NaiveDateTime};
-use entities::tournament::{
-    Tournament, TournamentAttendance, TournamentCreation, TournamentRegistration,
+use chrono::{Duration, NaiveDateTime, Utc};
+use entities::{
+    court::CourtReservationCreation, // Added
+    tournament::{Tournament, TournamentAttendance, TournamentCreation, TournamentRegistration},
 };
 use repository_trait::{
     TournamentAttendanceRepository, TournamentRegistrationRepository, TournamentRepository,
@@ -14,37 +18,77 @@ use repository_trait::{
 use std::sync::Arc;
 use uuid::Uuid;
 
+const MIN_EVENT_DURATION_MINUTES: i64 = 10;
+const MAX_EVENT_DURATION_HOURS: i64 = 5;
+
 #[derive(Clone)]
 pub struct TournamentService {
-    tournament_repo: Arc<dyn TournamentRepository + Send + Sync>,
-    registration_repo: Arc<dyn TournamentRegistrationRepository + Send + Sync>,
-    attendance_repo: Arc<dyn TournamentAttendanceRepository + Send + Sync>,
+    tournament_repo: Arc<dyn TournamentRepository>,
+    registration_repo: Arc<dyn TournamentRegistrationRepository>,
+    attendance_repo: Arc<dyn TournamentAttendanceRepository>,
     category_service: CategoryService,
+    court_service: CourtService, // Added
 }
 
 impl TournamentService {
     pub fn new(
-        tournament_repo: Arc<dyn TournamentRepository + Send + Sync>,
-        registration_repo: Arc<dyn TournamentRegistrationRepository + Send + Sync>,
-        attendance_repo: Arc<dyn TournamentAttendanceRepository + Send + Sync>,
+        tournament_repo: Arc<dyn TournamentRepository>,
+        registration_repo: Arc<dyn TournamentRegistrationRepository>,
+        attendance_repo: Arc<dyn TournamentAttendanceRepository>,
         category_service: CategoryService,
+        court_service: CourtService, // Added
     ) -> Self {
         Self {
             tournament_repo,
             registration_repo,
             attendance_repo,
             category_service,
+            court_service, // Added
         }
     }
 
-    pub async fn create_tournament(&self, tournament: TournamentCreation) -> Result<()> {
-        validate_tournament_dates(tournament.start_datetime, tournament.end_datetime)?;
+    pub async fn create_tournament(
+        &self,
+        tournament_creation: TournamentCreation,
+        id_court_to_reserve: Option<Uuid>, // Added
+    ) -> Result<Tournament> {
+        validate_event_duration(
+            tournament_creation.start_datetime,
+            tournament_creation.end_datetime,
+        )?;
 
-        self.tournament_repo
-            .create_tournament(&tournament.to_tournament(Uuid::new_v4()))
+        // Validate category exists
+        let _ = self
+            .category_service
+            .get_category_by_id(tournament_creation.id_category)
             .await?;
 
-        Ok(())
+        let tournament_id = Uuid::new_v4();
+        let tournament = tournament_creation.to_tournament(tournament_id);
+
+        self.tournament_repo.create_tournament(&tournament).await?;
+
+        if let Some(id_court) = id_court_to_reserve {
+            let reservation_creation = CourtReservationCreation {
+                id_court,
+                start_reservation_datetime: tournament.start_datetime,
+                end_reservation_datetime: tournament.end_datetime,
+                id_training: None,
+                id_tournament: Some(tournament.id_tournament),
+            };
+            if let Err(e) = self
+                .court_service
+                .create_reservation(reservation_creation)
+                .await
+            {
+                // Rollback or inform. For now, delete tournament.
+                self.tournament_repo.delete_tournament(tournament.id_tournament).await.unwrap_or_else(|del_err| {
+                    tracing::error!("Failed to rollback tournament creation after court reservation failure: {}", del_err);
+                });
+                return Err(Error::CourtServiceError(e));
+            }
+        }
+        Ok(tournament)
     }
 
     pub async fn get_tournament(&self, id: Uuid) -> Result<Tournament> {
@@ -54,120 +98,206 @@ impl TournamentService {
             .ok_or(Error::TournamentNotFound)
     }
 
-    pub async fn update_tournament(&self, tournament: Tournament) -> Result<()> {
-        validate_tournament_dates(tournament.start_datetime, tournament.end_datetime)?;
+    pub async fn update_tournament(
+        &self,
+        tournament_id: Uuid,
+        tournament_update_payload: TournamentCreation, // Using TournamentCreation for update DTO
+        id_court_to_reserve: Option<Uuid>,
+    ) -> Result<Tournament> {
+        let mut tournament = self.get_tournament(tournament_id).await?;
 
-        if self
-            .tournament_repo
-            .get_tournament_by_id(tournament.id_tournament)
-            .await?
-            .is_none()
-        {
-            return Err(Error::TournamentNotFound);
+        validate_event_duration(
+            tournament_update_payload.start_datetime,
+            tournament_update_payload.end_datetime,
+        )?;
+
+        // Validate new category_id if changed
+        if tournament.id_category != tournament_update_payload.id_category {
+            let _ = self
+                .category_service
+                .get_category_by_id(tournament_update_payload.id_category)
+                .await?;
         }
 
-        self.tournament_repo
-            .update_tournament(&Tournament {
-                id_tournament: tournament.id_tournament,
-                name: tournament.name,
-                id_category: tournament.id_category,
-                start_datetime: tournament.start_datetime,
-                end_datetime: tournament.end_datetime,
-            })
-            .await?;
+        // Update fields
+        tournament.name = tournament_update_payload.name;
+        tournament.id_category = tournament_update_payload.id_category;
+        tournament.start_datetime = tournament_update_payload.start_datetime;
+        tournament.end_datetime = tournament_update_payload.end_datetime;
 
-        Ok(())
+        // Handle court reservation change
+        let existing_reservations =
+            self.court_service
+                .get_reservations_for_tournament(tournament_id)
+                .await
+                .map_err(|e| {
+                    Error::CourtServiceError(court_service::err::Error::UnknownDatabaseError(
+                        format!("Failed to get existing court reservations: {}", e),
+                    ))
+                })?;
+
+        for res in existing_reservations {
+            self.court_service
+                .delete_reservation_for_event(tournament_id, "tournament")
+                .await
+                .map_err(|e| {
+                    Error::CourtServiceError(court_service::err::Error::UnknownDatabaseError(
+                        format!(
+                            "Failed to delete old court reservation {}: {}",
+                            res.id_court_reservation, e
+                        ),
+                    ))
+                })?;
+        }
+
+        if let Some(id_court) = id_court_to_reserve {
+            let reservation_creation = CourtReservationCreation {
+                id_court,
+                start_reservation_datetime: tournament.start_datetime,
+                end_reservation_datetime: tournament.end_datetime,
+                id_training: None,
+                id_tournament: Some(tournament.id_tournament),
+            };
+            if let Err(e) = self
+                .court_service
+                .create_reservation(reservation_creation)
+                .await
+            {
+                return Err(Error::CourtServiceError(e));
+            }
+        }
+
+        self.tournament_repo.update_tournament(&tournament).await?;
+        Ok(tournament)
     }
 
     pub async fn delete_tournament(&self, id: Uuid) -> Result<()> {
-        if self
-            .tournament_repo
-            .get_tournament_by_id(id)
-            .await?
-            .is_none()
+        let _ = self.get_tournament(id).await?; // Ensures tournament exists
+
+        if let Err(e) = self
+            .court_service
+            .delete_reservation_for_event(id, "tournament")
+            .await
         {
-            return Err(Error::TournamentNotFound);
+            tracing::warn!(
+                "Could not delete court reservation for tournament {}: {}",
+                id,
+                e
+            );
         }
-
-        self.tournament_repo.delete_tournament(id).await?;
-
-        Ok(())
+        self.tournament_repo.delete_tournament(id).await
     }
 
     pub async fn list_tournaments(&self) -> Result<Vec<Tournament>> {
-        let tournaments = self.tournament_repo.list_tournaments().await?;
-
-        Ok(tournaments)
+        self.tournament_repo.list_tournaments().await
     }
 
-    pub async fn register_user(&self, registration: TournamentRegistration) -> Result<()> {
+    pub async fn register_user(
+        &self,
+        registration_payload: TournamentRegistration,
+    ) -> Result<TournamentRegistration> {
         let tournament = self
-            .tournament_repo
-            .get_tournament_by_id(registration.id_tournament)
-            .await?
-            .ok_or(Error::TournamentNotFound)?;
+            .get_tournament(registration_payload.id_tournament)
+            .await?;
 
         if !self
             .category_service
-            .user_has_category(registration.id_user, tournament.id_category)
+            .user_has_category(registration_payload.id_user, tournament.id_category)
             .await?
         {
             return Err(Error::UserDoesNotMeetCategoryRequirements);
         }
 
-        let registrations = self
+        if self
             .registration_repo
-            .get_tournament_registrations(registration.id_tournament)
-            .await?;
-        if registrations
-            .iter()
-            .any(|r| r.id_user == registration.id_user)
+            .get_tournament_registration(
+                registration_payload.id_tournament,
+                registration_payload.id_user,
+            )
+            .await?
+            .is_some()
         {
             return Err(Error::UserAlreadyRegistered);
         }
 
+        // Use registration_payload directly as it now contains all necessary fields including id_tournament
+        let registration_to_create = TournamentRegistration {
+            id_tournament: registration_payload.id_tournament,
+            id_user: registration_payload.id_user,
+            registration_datetime: Utc::now().naive_utc(), // Set current time
+        };
+
         self.registration_repo
-            .register_user_for_tournament(&TournamentRegistration {
-                id_tournament: registration.id_tournament,
-                id_user: registration.id_user,
-                registration_datetime: registration.registration_datetime,
-            })
+            .register_user_for_tournament(&registration_to_create) // Corrected variable name
             .await?;
 
-        Ok(())
+        Ok(registration_to_create) // Return the object that was actually created
     }
 
-    pub async fn record_attendance(&self, attendance: TournamentAttendance) -> Result<()> {
+    pub async fn record_attendance(
+        &self,
+        attendance_payload: TournamentAttendance,
+    ) -> Result<TournamentAttendance> {
+        let _ = self
+            .get_tournament(attendance_payload.id_tournament)
+            .await?;
+
         if self
-            .tournament_repo
-            .get_tournament_by_id(attendance.id_tournament)
+            .registration_repo
+            .get_tournament_registration(
+                attendance_payload.id_tournament,
+                attendance_payload.id_user,
+            )
             .await?
             .is_none()
-        {
-            return Err(Error::TournamentNotFound);
-        }
-
-        let registrations = self
-            .registration_repo
-            .get_tournament_registrations(attendance.id_tournament)
-            .await?;
-        if !registrations
-            .iter()
-            .any(|r| r.id_user == attendance.id_user)
         {
             return Err(Error::UserNotRegistered);
         }
 
+        // Check if user already has attendance recorded (to prevent duplicate entries, decide if update or error)
+        if self
+            .attendance_repo
+            .get_tournament_attendance_by_user(
+                attendance_payload.id_tournament,
+                attendance_payload.id_user,
+            )
+            .await?
+            .is_some()
+        {
+            // For now, let's assume we prevent re-recording if already attended. Or this could be an update.
+            return Err(Error::UnknownDatabaseError(
+                "User attendance already recorded for this tournament.".to_string(),
+            ));
+        }
+
+        if attendance_payload.position <= 0 {
+            return Err(Error::NegativePosition);
+        }
+
+        // Check if position is already taken
+        let existing_attendance = self
+            .attendance_repo
+            .get_tournament_attendance(attendance_payload.id_tournament)
+            .await?;
+        if existing_attendance
+            .iter()
+            .any(|a| a.position == attendance_payload.position)
+        {
+            return Err(Error::PositionAlreadyTaken);
+        }
+
+        let attendance = TournamentAttendance {
+            id_tournament: attendance_payload.id_tournament,
+            id_user: attendance_payload.id_user,
+            attendance_datetime: Utc::now().naive_utc(), // Set current time
+            position: attendance_payload.position,
+        };
+
         self.attendance_repo
-            .record_tournament_attendance(&TournamentAttendance {
-                id_tournament: attendance.id_tournament,
-                id_user: attendance.id_user,
-                attendance_datetime: attendance.attendance_datetime,
-                position: attendance.position,
-            })
+            .record_tournament_attendance(&attendance)
             .await?;
 
-        Ok(())
+        Ok(attendance)
     }
 
     pub async fn get_user_registrations(
@@ -190,38 +320,36 @@ impl TournamentService {
         &self,
         tournament_id: Uuid,
         user_id: Uuid,
-        position: i32,
+        new_position: i32,
     ) -> Result<()> {
-        if self
-            .tournament_repo
-            .get_tournament_by_id(tournament_id)
-            .await?
-            .is_none()
-        {
-            return Err(Error::TournamentNotFound);
-        }
+        let _ = self.get_tournament(tournament_id).await?;
 
-        let attendance = self
+        // Ensure user attended
+        let _ = self
             .attendance_repo
-            .get_tournament_attendance(tournament_id)
-            .await?;
-        if !attendance.iter().any(|a| a.id_user == user_id) {
-            return Err(Error::UserDidNotAttend);
-        }
+            .get_tournament_attendance_by_user(tournament_id, user_id)
+            .await?
+            .ok_or(Error::UserDidNotAttend)?;
 
-        if attendance.iter().any(|a| a.position == position) {
-            return Err(Error::PositionAlreadyTaken);
-        }
-
-        if position < 1 {
+        if new_position <= 0 {
             return Err(Error::NegativePosition);
         }
 
-        self.attendance_repo
-            .update_tournament_position(tournament_id, user_id, position)
+        // Check if new_position is already taken by another user in the same tournament
+        let existing_attendance = self
+            .attendance_repo
+            .get_tournament_attendance(tournament_id)
             .await?;
+        if existing_attendance
+            .iter()
+            .any(|a| a.id_user != user_id && a.position == new_position)
+        {
+            return Err(Error::PositionAlreadyTaken);
+        }
 
-        Ok(())
+        self.attendance_repo
+            .update_tournament_position(tournament_id, user_id, new_position)
+            .await
     }
 
     pub async fn get_eligible_tournaments(&self, user_id: Uuid) -> Result<Vec<Tournament>> {
@@ -251,30 +379,26 @@ impl TournamentService {
     }
 
     pub async fn delete_attendance(&self, tournament_id: Uuid, user_id: Uuid) -> Result<()> {
-        if self
-            .tournament_repo
-            .get_tournament_by_id(tournament_id)
+        let _ = self.get_tournament(tournament_id).await?;
+        // Check if attendance exists before deleting
+        let _ = self
+            .attendance_repo
+            .get_tournament_attendance_by_user(tournament_id, user_id)
             .await?
-            .is_none()
-        {
-            return Err(Error::TournamentNotFound);
-        }
-
+            .ok_or(Error::UserDidNotAttend)?;
         self.attendance_repo
             .delete_attendance(tournament_id, user_id)
             .await
     }
 
     pub async fn delete_registration(&self, tournament_id: Uuid, user_id: Uuid) -> Result<()> {
-        if self
-            .tournament_repo
-            .get_tournament_by_id(tournament_id)
+        let _ = self.get_tournament(tournament_id).await?;
+        // Check if registration exists before deleting
+        let _ = self
+            .registration_repo
+            .get_tournament_registration(tournament_id, user_id)
             .await?
-            .is_none()
-        {
-            return Err(Error::TournamentNotFound);
-        }
-
+            .ok_or(Error::UserNotRegistered)?;
         self.registration_repo
             .delete_registration(tournament_id, user_id)
             .await
@@ -282,29 +406,35 @@ impl TournamentService {
 
     pub async fn get_user_attendance(&self, user_id: Uuid) -> Result<Vec<TournamentAttendance>> {
         let all_tournaments = self.tournament_repo.list_tournaments().await?;
-        let mut user_attendance = Vec::new();
+        let mut user_attendance_list = Vec::new();
 
         for tournament in all_tournaments {
-            let attendance = self
+            if let Some(att) = self
                 .attendance_repo
-                .get_tournament_attendance(tournament.id_tournament)
-                .await?;
-
-            user_attendance.extend(attendance.into_iter().filter(|a| a.id_user == user_id));
+                .get_tournament_attendance_by_user(tournament.id_tournament, user_id)
+                .await?
+            {
+                user_attendance_list.push(att);
+            }
         }
-
-        Ok(user_attendance)
+        Ok(user_attendance_list)
     }
 }
 
-fn validate_tournament_dates(start_time: NaiveDateTime, end_time: NaiveDateTime) -> Result<()> {
+fn validate_event_duration(start_time: NaiveDateTime, end_time: NaiveDateTime) -> Result<()> {
     if start_time >= end_time {
         return Err(Error::InvalidDates);
     }
-
-    if start_time <= Local::now().naive_local() {
-        return Err(Error::InvalidDates);
+    // It's okay for tournaments to be in the past for record keeping or if they are ongoing.
+    // if start_time <= Utc::now().naive_utc() {
+    //     return Err(Error::InvalidDates);
+    // }
+    let duration = end_time - start_time;
+    if duration < Duration::minutes(MIN_EVENT_DURATION_MINUTES) {
+        return Err(Error::InvalidDates); // Or a more specific error like "EventDurationTooShort"
     }
-
+    if duration > Duration::hours(MAX_EVENT_DURATION_HOURS) {
+        return Err(Error::InvalidDates); // Or "EventDurationTooLong"
+    }
     Ok(())
 }

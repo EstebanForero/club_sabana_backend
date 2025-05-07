@@ -1,33 +1,54 @@
 pub mod err;
 pub mod repository_trait;
 
-use chrono::{NaiveDateTime, Utc};
-use chrono_tz::America::Bogota;
+use chrono::{Duration, NaiveDateTime, Utc};
+// use chrono_tz::America::Bogota; // Not used directly if Utc::now().naive_utc() is preferred
 use err::{Error, Result};
 use repository_trait::{TrainingRegistrationRepository, TrainingRepository};
 
-use crate::category_service::CategoryService;
-use entities::training::{Training, TrainingCreation, TrainingRegistration};
+use crate::{
+    category_service::CategoryService,
+    court_service::CourtService,     // Added CourtService
+    tuition_service::TuitionService, // Added TuitionService
+    user_service::{err::Error as UserError, UserService}, // Added UserService for trainer validation
+};
+use entities::{
+    court::CourtReservationCreation, // Added
+    training::{Training, TrainingCreation, TrainingRegistration},
+    user::URol, // Added for trainer validation
+};
 use std::sync::Arc;
 use uuid::Uuid;
 
+const MIN_EVENT_DURATION_MINUTES: i64 = 10;
+const MAX_EVENT_DURATION_HOURS: i64 = 5;
+
 #[derive(Clone)]
 pub struct TrainingService {
-    training_repo: Arc<dyn TrainingRepository + Send + Sync>,
-    registration_repo: Arc<dyn TrainingRegistrationRepository + Send + Sync>,
+    training_repo: Arc<dyn TrainingRepository>,
+    registration_repo: Arc<dyn TrainingRegistrationRepository>,
     category_service: CategoryService,
+    court_service: CourtService,     // Added
+    user_service: UserService,       // Added
+    tuition_service: TuitionService, // Added
 }
 
 impl TrainingService {
     pub fn new(
-        training_repo: Arc<dyn TrainingRepository + Send + Sync>,
-        registration_repo: Arc<dyn TrainingRegistrationRepository + Send + Sync>,
+        training_repo: Arc<dyn TrainingRepository>,
+        registration_repo: Arc<dyn TrainingRegistrationRepository>,
         category_service: CategoryService,
+        court_service: CourtService,     // Added
+        user_service: UserService,       // Added
+        tuition_service: TuitionService, // Added
     ) -> Self {
         Self {
             training_repo,
             registration_repo,
             category_service,
+            court_service,   // Added
+            user_service,    // Added
+            tuition_service, // Added
         }
     }
 
@@ -54,19 +75,79 @@ impl TrainingService {
         training_id: Uuid,
         user_id: Uuid,
     ) -> Result<()> {
+        // Check if training exists
+        let _ = self.get_training(training_id).await?;
+        // Check if registration exists
+        self.registration_repo
+            .get_training_registration(training_id, user_id)
+            .await?
+            .ok_or(Error::RegistrationNotFound)?;
+
         self.registration_repo
             .delete_training_registration(training_id, user_id)
             .await
     }
 
-    pub async fn create_training(&self, training_creation: &TrainingCreation) -> Result<()> {
-        if training_creation.start_datetime >= training_creation.end_datetime {
-            return Err(Error::InvalidDates);
+    pub async fn create_training(
+        &self,
+        training_creation: TrainingCreation,
+        id_court_to_reserve: Option<Uuid>, // Added optional court ID for reservation
+    ) -> Result<Training> {
+        validate_event_duration(
+            training_creation.start_datetime,
+            training_creation.end_datetime,
+        )?;
+
+        // Validate trainer_id exists and is a TRAINER
+        let trainer = self
+            .user_service
+            .get_user_by_id(training_creation.trainer_id)
+            .await
+            .map_err(|e| match e {
+                UserError::UserIdDontExist => Error::UserServiceError(UserError::UserIdDontExist), // Map to specific service error
+                _ => Error::UserServiceError(UserError::UnknownDatabaseError(
+                    "Failed to validate trainer".to_string(),
+                )),
+            })?;
+        if trainer.user_rol != URol::TRAINER {
+            return Err(Error::UserServiceError(UserError::UnknownDatabaseError(
+                // Be more specific or add a new error variant
+                "Assigned user is not a trainer".to_string(),
+            )));
         }
 
-        let training = training_creation.to_training_cloned(Uuid::new_v4());
+        // Validate category exists
+        let _ = self
+            .category_service
+            .get_category_by_id(training_creation.id_category)
+            .await?;
 
-        self.training_repo.create_training(&training).await
+        let training_id = Uuid::new_v4();
+        let training = training_creation.to_training(training_id);
+
+        self.training_repo.create_training(&training).await?;
+
+        if let Some(id_court) = id_court_to_reserve {
+            let reservation_creation = CourtReservationCreation {
+                id_court,
+                start_reservation_datetime: training.start_datetime,
+                end_reservation_datetime: training.end_datetime,
+                id_training: Some(training.id_training),
+                id_tournament: None,
+            };
+            if let Err(e) = self
+                .court_service
+                .create_reservation(reservation_creation)
+                .await
+            {
+                self.training_repo.delete_training(training.id_training).await.unwrap_or_else(|del_err| {
+                    tracing::error!("Failed to rollback training creation after court reservation failure: {}", del_err);
+                });
+                // Directly use the CourtServiceError variant from TrainingService::Error
+                return Err(Error::CourtServiceError(e));
+            }
+        }
+        Ok(training)
     }
 
     pub async fn get_training(&self, id: Uuid) -> Result<Training> {
@@ -76,26 +157,108 @@ impl TrainingService {
             .ok_or(Error::TrainingNotFound)
     }
 
-    pub async fn update_training(&self, training: &Training) -> Result<()> {
-        if training.start_datetime >= training.end_datetime {
-            return Err(Error::InvalidDates);
+    pub async fn update_training(
+        &self,
+        training_id: Uuid,
+        training_update_payload: TrainingCreation,
+        id_court_to_reserve: Option<Uuid>,
+    ) -> Result<Training> {
+        let mut training = self.get_training(training_id).await?;
+
+        validate_event_duration(
+            training_update_payload.start_datetime,
+            training_update_payload.end_datetime,
+        )?;
+
+        // Validate new trainer_id if changed
+        if training.trainer_id != training_update_payload.trainer_id {
+            let trainer = self
+                .user_service
+                .get_user_by_id(training_update_payload.trainer_id)
+                .await
+                .map_err(|e| match e {
+                    UserError::UserIdDontExist => {
+                        Error::UserServiceError(UserError::UserIdDontExist)
+                    }
+                    _ => Error::UserServiceError(UserError::UnknownDatabaseError(
+                        "Failed to validate new trainer".to_string(),
+                    )),
+                })?;
+            if trainer.user_rol != URol::TRAINER {
+                return Err(Error::UserServiceError(UserError::UnknownDatabaseError(
+                    "Assigned new user is not a trainer".to_string(),
+                )));
+            }
         }
 
-        if self
-            .training_repo
-            .get_training_by_id(training.id_training)
-            .await?
-            .is_none()
-        {
-            return Err(Error::TrainingNotFound);
+        // Validate new category_id if changed
+        if training.id_category != training_update_payload.id_category {
+            let _ = self
+                .category_service
+                .get_category_by_id(training_update_payload.id_category)
+                .await?;
         }
 
-        self.training_repo.update_training(training).await
+        // Update fields
+        training.name = training_update_payload.name;
+        training.id_category = training_update_payload.id_category;
+        training.trainer_id = training_update_payload.trainer_id;
+        training.start_datetime = training_update_payload.start_datetime;
+        training.end_datetime = training_update_payload.end_datetime;
+        training.minimum_payment = training_update_payload.minimum_payment;
+
+        let existing_reservations = self
+            .court_service
+            .get_reservations_for_training(training_id)
+            .await
+            .map_err(Error::CourtServiceError)?; // Map court service error
+
+        for _ in existing_reservations {
+            self.court_service
+                .delete_reservation_for_event(training_id, "training")
+                .await
+                .map_err(Error::CourtServiceError)?;
+        }
+
+        if let Some(id_court) = id_court_to_reserve {
+            let reservation_creation = CourtReservationCreation {
+                id_court,
+                start_reservation_datetime: training.start_datetime,
+                end_reservation_datetime: training.end_datetime,
+                id_training: Some(training.id_training),
+                id_tournament: None,
+            };
+            if let Err(e) = self
+                .court_service
+                .create_reservation(reservation_creation)
+                .await
+            {
+                return Err(Error::CourtServiceError(e));
+            }
+        }
+
+        self.training_repo.update_training(&training).await?;
+        Ok(training)
     }
 
     pub async fn delete_training(&self, id: Uuid) -> Result<()> {
-        if self.training_repo.get_training_by_id(id).await?.is_none() {
-            return Err(Error::TrainingNotFound);
+        let _ = self.get_training(id).await?; // Ensures training exists before attempting delete
+
+        // Soft delete associated court reservations
+        // This might be better handled by ON DELETE CASCADE in DB if reservations are hard-deleted,
+        // or explicitly here if soft-deleted.
+        // For now, assuming CourtService handles this or it's done via DB constraints.
+        if let Err(e) = self
+            .court_service
+            .delete_reservation_for_event(id, "training")
+            .await
+        {
+            tracing::warn!(
+                "Could not delete court reservation for training {}: {}",
+                id,
+                e
+            );
+            // Depending on requirements, you might want to fail here or just log.
         }
 
         self.training_repo.delete_training(id).await
@@ -105,37 +268,89 @@ impl TrainingService {
         self.training_repo.list_trainings().await
     }
 
-    pub async fn register_user(&self, registration: TrainingRegistration) -> Result<()> {
+    pub async fn get_trainings_by_trainer(&self, trainer_id: Uuid) -> Result<Vec<Training>> {
+        // Validate trainer_id exists and is a TRAINER
+        let trainer = self
+            .user_service
+            .get_user_by_id(trainer_id)
+            .await
+            .map_err(|e| match e {
+                UserError::UserIdDontExist => {
+                    Error::UnknownDatabaseError(format!("Trainer with ID {} not found", trainer_id))
+                }
+                _ => Error::UnknownDatabaseError("Failed to validate trainer".to_string()),
+            })?;
+        if trainer.user_rol != URol::TRAINER {
+            return Err(Error::UnknownDatabaseError(
+                "User is not a trainer".to_string(),
+            ));
+        }
+        self.training_repo
+            .get_trainings_by_trainer_id(trainer_id)
+            .await
+    }
+
+    pub async fn register_user(
+        &self,
+        registration_payload: TrainingRegistration,
+    ) -> Result<TrainingRegistration> {
         let training = self
             .training_repo
-            .get_training_by_id(registration.id_training)
+            .get_training_by_id(registration_payload.id_training)
             .await?
             .ok_or(Error::TrainingNotFound)?;
 
-        // Check if user has the required category
         if !self
             .category_service
-            .user_has_category(registration.id_user, training.id_category)
+            .user_has_category(registration_payload.id_user, training.id_category)
             .await?
         {
             return Err(Error::UserDoesNotMeetCategoryRequirements);
         }
 
-        // Check if user is already registered
-        let registrations = self
+        if self
             .registration_repo
-            .get_training_registrations(registration.id_training)
-            .await?;
-        if registrations
-            .iter()
-            .any(|r| r.id_user == registration.id_user)
+            .get_training_registration(
+                registration_payload.id_training,
+                registration_payload.id_user,
+            )
+            .await?
+            .is_some()
         {
             return Err(Error::UserAlreadyRegistered);
         }
+        fn fun_name(e: crate::tuition_service::err::Error) -> Error {
+            Error::TuitionServiceError(e)
+        }
+
+        if training.minimum_payment > 0.0
+            && !self
+                .tuition_service
+                .has_active_tuition_with_amount(
+                    registration_payload.id_user,
+                    training.minimum_payment,
+                )
+                .await // Corrected
+                .map_err(fun_name)?
+        {
+            return Err(Error::TuitionServiceError(crate::tuition_service::err::Error::UnknownDatabaseError( // Be more specific
+                        format!("User has no active tuition or tuition amount is less than the minimum required: {}", training.minimum_payment) // Corrected
+                    )));
+        }
+
+        let registration_to_create = TrainingRegistration {
+            id_training: registration_payload.id_training,
+            id_user: registration_payload.id_user,
+            registration_datetime: Utc::now().naive_utc(),
+            attended: false,
+            attendance_datetime: None,
+        };
 
         self.registration_repo
-            .register_user_for_training(&registration)
-            .await
+            .register_user_for_training(&registration_to_create)
+            .await?;
+
+        Ok(registration_to_create)
     }
 
     pub async fn mark_attendance(
@@ -144,27 +359,22 @@ impl TrainingService {
         user_id: Uuid,
         attended: bool,
     ) -> Result<()> {
-        if self
-            .training_repo
-            .get_training_by_id(training_id)
-            .await?
-            .is_none()
-        {
-            return Err(Error::TrainingNotFound);
-        }
+        let _ = self.get_training(training_id).await?;
 
-        let registrations = self
+        let _ = self
             .registration_repo
-            .get_training_registrations(training_id)
-            .await?;
-        if !registrations.iter().any(|r| r.id_user == user_id) {
-            return Err(Error::UserNotRegistered);
-        }
+            .get_training_registration(training_id, user_id)
+            .await?
+            .ok_or(Error::UserNotRegistered)?;
 
-        let attendance_date = get_bogota_now();
+        let attendance_datetime = if attended {
+            Some(Utc::now().naive_utc())
+        } else {
+            None
+        };
 
         self.registration_repo
-            .mark_training_attendance(training_id, user_id, attended, attendance_date)
+            .mark_training_attendance(training_id, user_id, attended, attendance_datetime)
             .await
     }
 
@@ -186,7 +396,17 @@ impl TrainingService {
     }
 }
 
-fn get_bogota_now() -> NaiveDateTime {
-    let bogota_time = Utc::now().with_timezone(&Bogota);
-    bogota_time.naive_local()
+fn validate_event_duration(start_time: NaiveDateTime, end_time: NaiveDateTime) -> Result<()> {
+    if start_time >= end_time {
+        return Err(Error::InvalidDates);
+    }
+
+    let duration = end_time - start_time;
+    if duration < Duration::minutes(MIN_EVENT_DURATION_MINUTES) {
+        return Err(Error::InvalidDates);
+    }
+    if duration > Duration::hours(MAX_EVENT_DURATION_HOURS) {
+        return Err(Error::InvalidDates);
+    }
+    Ok(())
 }

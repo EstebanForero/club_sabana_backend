@@ -12,12 +12,7 @@ use crate::TursoDb;
 #[async_trait]
 impl TournamentRepository for TursoDb {
     async fn create_tournament(&self, tournament: &Tournament) -> Result<()> {
-        let conn = self
-            .get_connection()
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-
-        conn.execute(
+        self.execute_with_error(
             "INSERT INTO tournament (
                 id_tournament, name, id_category, start_datetime, end_datetime, deleted
             ) VALUES (?1, ?2, ?3, ?4, ?5, 0)",
@@ -34,136 +29,76 @@ impl TournamentRepository for TursoDb {
                     .format("%Y-%m-%d %H:%M:%S")
                     .to_string(),
             ],
-        )
-        .await
-        .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-
-        Ok(())
-    }
-
-    async fn get_tournament_by_id(&self, id: Uuid) -> Result<Option<Tournament>> {
-        let conn = self
-            .get_connection_with_error(Error::UnknownDatabaseError)
-            .await?;
-
-        let rows = conn
-            .query(
-                "SELECT id_tournament, name, id_category, start_datetime, end_datetime 
-                 FROM tournament 
-                 WHERE id_tournament = ?1 AND deleted = 0",
-                params![id.to_string()],
-            )
-            .await;
-
-        self.get_value_from_row(rows, Error::UnknownDatabaseError)
-            .await
-    }
-
-    async fn update_tournament(&self, tournament: &Tournament) -> Result<()> {
-        self.execute_with_error(
-            "UPDATE tournament SET 
-                name = ?1, 
-                id_category = ?2, 
-                start_datetime = ?3, 
-                end_datetime = ?4
-             WHERE id_tournament = ?5",
-            params![
-                tournament.name.to_string(),
-                tournament.id_category.to_string(),
-                tournament
-                    .start_datetime
-                    .format("%Y-%m-%d %H:%M:%S")
-                    .to_string(),
-                tournament
-                    .end_datetime
-                    .format("%Y-%m-%d %H:%M:%S")
-                    .to_string(),
-                tournament.id_tournament.to_string(),
-            ],
             Error::UnknownDatabaseError,
         )
         .await
     }
 
-    // async fn update_tournament(&self, tournament: &Tournament) -> Result<()> {
-    //     let conn = self
-    //         .get_connection()
-    //         .await
-    //         .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-    //
-    //     conn.execute(
-    //         "UPDATE tournament SET
-    //             name = ?1,
-    //             id_category = ?2,
-    //             start_datetime = ?3,
-    //             end_datetime = ?4,
-    //             deleted = ?5
-    //          WHERE id_tournament = ?6",
-    //         params![
-    //             tournament.name.to_string(),
-    //             tournament.id_category.to_string(),
-    //             tournament
-    //                 .start_datetime
-    //                 .format("%Y-%m-%d %H:%M:%S")
-    //                 .to_string(),
-    //             tournament
-    //                 .end_datetime
-    //                 .format("%Y-%m-%d %H:%M:%S")
-    //                 .to_string(),
-    //             tournament.deleted as i32,
-    //             tournament.id_tournament.to_string(),
-    //         ],
-    //     )
-    //     .await
-    //     .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-    //
-    //     Ok(())
-    // }
-
-    async fn delete_tournament(&self, id: Uuid) -> Result<()> {
-        let conn = self
-            .get_connection()
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-
-        conn.execute(
-            "UPDATE tournament SET deleted = 1 WHERE id_tournament = ?1",
+    async fn get_tournament_by_id(&self, id: Uuid) -> Result<Option<Tournament>> {
+        self.query_one_with_error(
+            "SELECT id_tournament, name, id_category, start_datetime, end_datetime 
+                 FROM tournament 
+                 WHERE id_tournament = ?1 AND deleted = 0",
             params![id.to_string()],
+            Error::UnknownDatabaseError,
         )
         .await
-        .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+    }
 
+    async fn update_tournament(&self, tournament: &Tournament) -> Result<()> {
+        let affected_rows = self
+            .execute_returning_affected_with_error(
+                "UPDATE tournament SET 
+                name = ?1, 
+                id_category = ?2, 
+                start_datetime = ?3, 
+                end_datetime = ?4
+             WHERE id_tournament = ?5 AND deleted = 0",
+                params![
+                    tournament.name.to_string(),
+                    tournament.id_category.to_string(),
+                    tournament
+                        .start_datetime
+                        .format("%Y-%m-%d %H:%M:%S")
+                        .to_string(),
+                    tournament
+                        .end_datetime
+                        .format("%Y-%m-%d %H:%M:%S")
+                        .to_string(),
+                    tournament.id_tournament.to_string(),
+                ],
+                Error::UnknownDatabaseError,
+            )
+            .await?;
+        if affected_rows == 0 {
+            return Err(Error::TournamentNotFound);
+        }
+        Ok(())
+    }
+
+    async fn delete_tournament(&self, id: Uuid) -> Result<()> {
+        let affected_rows = self
+            .execute_returning_affected_with_error(
+                "UPDATE tournament SET deleted = 1 WHERE id_tournament = ?1 AND deleted = 0",
+                params![id.to_string()],
+                Error::UnknownDatabaseError,
+            )
+            .await?;
+        if affected_rows == 0 {
+            return Err(Error::TournamentNotFound);
+        }
         Ok(())
     }
 
     async fn list_tournaments(&self) -> Result<Vec<Tournament>> {
-        let conn = self
-            .get_connection()
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-
-        let mut rows = conn
-            .query(
-                "SELECT id_tournament, name, id_category, start_datetime, end_datetime 
+        self.query_many_with_error(
+            "SELECT id_tournament, name, id_category, start_datetime, end_datetime 
                  FROM tournament 
                  WHERE deleted = 0",
-                params![],
-            )
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-
-        let mut tournaments = Vec::new();
-        while let Some(row_result) = rows
-            .next()
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
-        {
-            let tournament = de::from_row::<Tournament>(&row_result)
-                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-            tournaments.push(tournament);
-        }
-
-        Ok(tournaments)
+            params![],
+            Error::UnknownDatabaseError,
+        )
+        .await
     }
 }
 
@@ -173,12 +108,7 @@ impl TournamentRegistrationRepository for TursoDb {
         &self,
         registration: &TournamentRegistration,
     ) -> Result<()> {
-        let conn = self
-            .get_connection()
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-
-        conn.execute(
+        self.execute_with_error(
             "INSERT INTO tournament_registration (
                 id_tournament, id_user, registration_datetime
             ) VALUES (?1, ?2, ?3)",
@@ -190,11 +120,9 @@ impl TournamentRegistrationRepository for TursoDb {
                     .format("%Y-%m-%d %H:%M:%S")
                     .to_string(),
             ],
+            Error::UnknownDatabaseError,
         )
         .await
-        .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-
-        Ok(())
     }
 
     async fn get_tournament_registrations(
@@ -204,8 +132,23 @@ impl TournamentRegistrationRepository for TursoDb {
         self.query_many_with_error(
             "SELECT id_tournament, id_user, registration_datetime 
                 FROM tournament_registration 
-                WHERE id_tournament = ?1 AND deleted = 0",
+                WHERE id_tournament = ?1",
             params![tournament_id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
+    async fn get_tournament_registration(
+        &self,
+        tournament_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<Option<TournamentRegistration>> {
+        self.query_one_with_error(
+            "SELECT id_tournament, id_user, registration_datetime
+             FROM tournament_registration
+             WHERE id_tournament = ?1 AND id_user = ?2",
+            params![tournament_id.to_string(), user_id.to_string()],
             Error::UnknownDatabaseError,
         )
         .await
@@ -215,7 +158,7 @@ impl TournamentRegistrationRepository for TursoDb {
         self.query_many_with_error(
             "SELECT id_tournament, id_user, registration_datetime
              FROM tournament_registration
-             WHERE id_user = ?1 AND deleted = 0",
+             WHERE id_user = ?1",
             params![user_id.to_string()],
             Error::UnknownDatabaseError,
         )
@@ -223,68 +166,40 @@ impl TournamentRegistrationRepository for TursoDb {
     }
 
     async fn delete_registration(&self, tournament_id: Uuid, user_id: Uuid) -> Result<()> {
-        self.execute_with_error(
-            "DELETE FROM tournament_registration
+        let affected_rows = self
+            .execute_returning_affected_with_error(
+                "DELETE FROM tournament_registration
              WHERE id_tournament = ?1 AND id_user = ?2",
-            params![tournament_id.to_string(), user_id.to_string()],
-            Error::UnknownDatabaseError,
-        )
-        .await
+                params![tournament_id.to_string(), user_id.to_string()],
+                Error::UnknownDatabaseError,
+            )
+            .await?;
+        if affected_rows == 0 {
+            return Err(Error::UserNotRegistered);
+        }
+        Ok(())
     }
-
-    // async fn get_tournament_registrations(
-    //     &self,
-    //     tournament_id: Uuid,
-    // ) -> Result<Vec<TournamentRegistration>> {
-    //     let conn = self
-    //         .get_connection()
-    //         .await
-    //         .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-    //
-    //     let mut rows = conn
-    //         .query(
-    //             "SELECT id_tournament, id_user, registration_datetime
-    //              FROM tournament_registration
-    //              WHERE id_tournament = ?1 AND deleted = 0",
-    //             params![tournament_id.to_string()],
-    //         )
-    //         .await
-    //         .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-    //
-    //     let mut registrations = Vec::new();
-    //     while let Some(row_result) = rows
-    //         .next()
-    //         .await
-    //         .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
-    //     {
-    //         let registration = de::from_row::<TournamentRegistration>(&row_result)
-    //             .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-    //         registrations.push(registration);
-    //     }
-    //
-    //     Ok(registrations)
-    // }
 }
 
 #[async_trait]
 impl TournamentAttendanceRepository for TursoDb {
     async fn delete_attendance(&self, tournament_id: Uuid, user_id: Uuid) -> Result<()> {
-        self.execute_with_error(
-            "DELETE FROM tournament_attendance 
+        let affected_rows = self
+            .execute_returning_affected_with_error(
+                "DELETE FROM tournament_attendance 
              WHERE id_tournament = ?1 AND id_user = ?2",
-            params![tournament_id.to_string(), user_id.to_string()],
-            Error::UnknownDatabaseError,
-        )
-        .await
+                params![tournament_id.to_string(), user_id.to_string()],
+                Error::UnknownDatabaseError,
+            )
+            .await?;
+        if affected_rows == 0 {
+            return Err(Error::UserDidNotAttend);
+        }
+        Ok(())
     }
 
     async fn record_tournament_attendance(&self, attendance: &TournamentAttendance) -> Result<()> {
-        let conn = self
-            .get_connection()
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-
-        conn.execute(
+        self.execute_with_error(
             "INSERT INTO tournament_attendance (
                 id_tournament, id_user, attendance_datetime, position
             ) VALUES (?1, ?2, ?3, ?4)",
@@ -297,44 +212,38 @@ impl TournamentAttendanceRepository for TursoDb {
                     .to_string(),
                 attendance.position,
             ],
+            Error::UnknownDatabaseError,
         )
         .await
-        .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-
-        Ok(())
     }
 
     async fn get_tournament_attendance(
         &self,
         tournament_id: Uuid,
     ) -> Result<Vec<TournamentAttendance>> {
-        let conn = self
-            .get_connection()
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-
-        let mut rows = conn
-            .query(
-                "SELECT id_tournament, id_user, attendance_datetime, position 
+        self.query_many_with_error(
+            "SELECT id_tournament, id_user, attendance_datetime, position 
                  FROM tournament_attendance 
-                 WHERE id_tournament = ?1 AND deleted = 0",
-                params![tournament_id.to_string()],
-            )
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
+                 WHERE id_tournament = ?1",
+            params![tournament_id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
 
-        let mut attendances = Vec::new();
-        while let Some(row_result) = rows
-            .next()
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?
-        {
-            let attendance = de::from_row::<TournamentAttendance>(&row_result)
-                .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-            attendances.push(attendance);
-        }
-
-        Ok(attendances)
+    async fn get_tournament_attendance_by_user(
+        &self,
+        tournament_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<Option<TournamentAttendance>> {
+        self.query_one_with_error(
+            "SELECT id_tournament, id_user, attendance_datetime, position 
+             FROM tournament_attendance 
+             WHERE id_tournament = ?1 AND id_user = ?2",
+            params![tournament_id.to_string(), user_id.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
     }
 
     async fn update_tournament_position(
@@ -343,19 +252,17 @@ impl TournamentAttendanceRepository for TursoDb {
         user_id: Uuid,
         position: i32,
     ) -> Result<()> {
-        let conn = self
-            .get_connection()
-            .await
-            .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-
-        conn.execute(
-            "UPDATE tournament_attendance SET position = ?1 
+        let affected_rows = self
+            .execute_returning_affected_with_error(
+                "UPDATE tournament_attendance SET position = ?1 
              WHERE id_tournament = ?2 AND id_user = ?3",
-            params![position, tournament_id.to_string(), user_id.to_string()],
-        )
-        .await
-        .map_err(|err| Error::UnknownDatabaseError(format!("{err}")))?;
-
+                params![position, tournament_id.to_string(), user_id.to_string()],
+                Error::UnknownDatabaseError,
+            )
+            .await?;
+        if affected_rows == 0 {
+            return Err(Error::UserDidNotAttend);
+        }
         Ok(())
     }
 }

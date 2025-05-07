@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use entities::user::{IdType, User};
 use libsql::{de, params};
+use tracing::{info, instrument};
 use use_cases::user_service::err::{Error, Result};
 use use_cases::user_service::repository_trait::UserRepository;
 use uuid::Uuid;
@@ -10,6 +11,8 @@ use crate::TursoDb;
 #[async_trait]
 impl UserRepository for TursoDb {
     async fn create_user(&self, user: &User) -> Result<()> {
+        info!("User is: {:?}", user.user_rol);
+
         let conn = self
             .get_connection()
             .await
@@ -272,7 +275,7 @@ WHERE deleted = 0",
 
 #[cfg(test)]
 mod test {
-    use std::{future::Future, process::Output};
+    use std::future::Future;
 
     use entities::user::{IdType, User};
     use rstest::{fixture, rstest};

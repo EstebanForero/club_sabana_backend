@@ -1,16 +1,34 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, State}, // Added Query
     http::StatusCode,
-    response::{IntoResponse, Response},
-    routing::{delete, get, post},
-    Json, Router,
+    response::IntoResponse,
+    routing::{delete, get, post}, // Added put
+    Json,
+    Router,
 };
 use entities::training::{Training, TrainingCreation, TrainingRegistration};
+use serde::Deserialize; // Added
 use tracing::error;
 use use_cases::training_service::{err::Error, TrainingService};
 use uuid::Uuid;
 
-use crate::err::{HttpError, HttpResult, ToErrResponse};
+use crate::err::{HttpError, HttpResult};
+
+// DTO for training creation that includes optional court ID
+#[derive(Debug, Deserialize)]
+pub struct TrainingCreationPayload {
+    #[serde(flatten)]
+    pub training_data: TrainingCreation,
+    pub id_court: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TrainingUpdatePayload {
+    // Similar for updates
+    #[serde(flatten)]
+    pub training_data: TrainingCreation, // Re-use TrainingCreation for update fields
+    pub id_court: Option<Uuid>,
+}
 
 pub fn training_router(training_service: TrainingService) -> Router {
     Router::new()
@@ -19,12 +37,12 @@ pub fn training_router(training_service: TrainingService) -> Router {
         .route(
             "/trainings/{id}",
             get(get_training)
-                .put(update_training)
+                .put(update_training) // Added PUT
                 .delete(delete_training),
         )
-        .route("/trainings/{id}/register", post(register_user))
+        .route("/trainings/{id}/register", post(register_user_for_training)) // Renamed for clarity
         .route(
-            "/trainings/{id}/attendance/{user_id}",
+            "/trainings/{training_id}/attendance/{user_id}",
             post(mark_attendance),
         )
         .route(
@@ -43,6 +61,11 @@ pub fn training_router(training_service: TrainingService) -> Router {
             "/trainings/{training_id}/registrations/{user_id}",
             delete(delete_training_registration),
         )
+        .route(
+            // New route for trainings by trainer
+            "/trainers/{trainer_id}/trainings",
+            get(get_trainings_by_trainer),
+        )
         .with_state(training_service)
 }
 
@@ -50,160 +73,234 @@ async fn alive() -> &'static str {
     "Training service is alive"
 }
 
+async fn get_trainings_by_trainer(
+    State(training_service): State<TrainingService>,
+    Path(trainer_id): Path<Uuid>,
+) -> HttpResult<Json<Vec<Training>>> {
+    let trainings = training_service
+        .get_trainings_by_trainer(trainer_id)
+        .await
+        .http_err("get trainings by trainer")?;
+    Ok(Json(trainings))
+}
+
 async fn get_user_training_registrations(
     State(training_service): State<TrainingService>,
     Path(user_id): Path<Uuid>,
-) -> Result<Json<Vec<TrainingRegistration>>, Response> {
+) -> HttpResult<Json<Vec<TrainingRegistration>>> {
+    // Return type changed to HttpResult
     let registrations = training_service
         .get_user_training_registrations(user_id)
         .await
         .http_err("get user training registrations")?;
-
     Ok(Json(registrations))
 }
 
 async fn get_training_registrations(
     State(training_service): State<TrainingService>,
     Path(training_id): Path<Uuid>,
-) -> Result<Json<Vec<TrainingRegistration>>, Response> {
+) -> HttpResult<Json<Vec<TrainingRegistration>>> {
+    // Return type changed
     let registrations = training_service
         .get_training_registrations(training_id)
         .await
         .http_err("get training registrations")?;
-
     Ok(Json(registrations))
 }
 
 async fn delete_training_registration(
     State(training_service): State<TrainingService>,
     Path((training_id, user_id)): Path<(Uuid, Uuid)>,
-) -> Result<Json<String>, Response> {
+) -> HttpResult<impl IntoResponse> {
+    // Return type changed
     training_service
         .delete_training_registration(training_id, user_id)
         .await
         .http_err("delete training registration")?;
-
-    Ok(Json(
-        "Training registration deleted successfully".to_string(),
+    Ok((
+        StatusCode::OK, // Use OK for successful deletion
+        "Training registration deleted successfully",
     ))
 }
 
 async fn create_training(
     State(training_service): State<TrainingService>,
-    Json(training): Json<TrainingCreation>,
-) -> HttpResult<impl IntoResponse> {
-    training_service
-        .create_training(&training)
+    Json(payload): Json<TrainingCreationPayload>, // Use new payload
+) -> HttpResult<Json<Training>> {
+    // Return created training
+    let created_training = training_service
+        .create_training(payload.training_data, payload.id_court)
         .await
         .http_err("create training")?;
-
-    Ok((StatusCode::OK, "Training created successfully"))
+    Ok(Json(created_training))
 }
 
 async fn get_training(
     State(training_service): State<TrainingService>,
     Path(id): Path<Uuid>,
-) -> Result<Json<Training>, Response> {
+) -> HttpResult<Json<Training>> {
+    // Return type changed
     let training = training_service
         .get_training(id)
         .await
         .http_err("get training")?;
-
     Ok(Json(training))
 }
 
 async fn update_training(
     State(training_service): State<TrainingService>,
-    Json(training): Json<Training>,
-) -> Result<(), Response> {
-    training_service
-        .update_training(&training)
+    Path(id_training): Path<Uuid>,
+    Json(payload): Json<TrainingUpdatePayload>, // Use new payload for update
+) -> HttpResult<Json<Training>> {
+    // Return updated training
+    let updated_training = training_service
+        .update_training(id_training, payload.training_data, payload.id_court)
         .await
         .http_err("update training")?;
-
-    Ok(())
+    Ok(Json(updated_training))
 }
 
 async fn delete_training(
     State(training_service): State<TrainingService>,
     Path(id): Path<Uuid>,
-) -> Result<Json<String>, Response> {
+) -> HttpResult<impl IntoResponse> {
+    // Return type changed
     training_service
         .delete_training(id)
         .await
         .http_err("delete training")?;
-
-    Ok(Json("Training deleted successfully".to_string()))
+    Ok((StatusCode::OK, "Training deleted successfully"))
 }
 
 async fn list_trainings(
     State(training_service): State<TrainingService>,
-) -> Result<Json<Vec<Training>>, Response> {
+) -> HttpResult<Json<Vec<Training>>> {
+    // Return type changed
     let trainings = training_service
         .list_trainings()
         .await
         .http_err("list trainings")?;
-
     Ok(Json(trainings))
 }
 
-async fn register_user(
+async fn register_user_for_training(
+    // Renamed
     State(training_service): State<TrainingService>,
-    Json(registration): Json<TrainingRegistration>,
-) -> Result<Json<String>, Response> {
-    training_service
-        .register_user(registration)
+    // Path(id_training): Path<Uuid>, // id_training is now in the body
+    Json(registration_payload): Json<TrainingRegistration>, // Use TrainingRegistration directly for payload
+) -> HttpResult<Json<TrainingRegistration>> {
+    // Return the created registration
+    // registration_payload.id_training = id_training; // Set from path if needed, or ensure it's in payload
+    let registration = training_service
+        .register_user(registration_payload) // Pass the whole payload
         .await
-        .http_err("register user")?;
+        .http_err("register user for training")?;
+    Ok(Json(registration))
+}
 
-    Ok(Json("User registered successfully".to_string()))
+#[derive(Deserialize)]
+struct MarkAttendancePayload {
+    attended: bool,
 }
 
 async fn mark_attendance(
     State(training_service): State<TrainingService>,
     Path((training_id, user_id)): Path<(Uuid, Uuid)>,
-    Json(attended): Json<bool>,
-) -> Result<Json<String>, Response> {
+    Json(payload): Json<MarkAttendancePayload>, // Use payload for attended status
+) -> HttpResult<impl IntoResponse> {
+    // Return type changed
     training_service
-        .mark_attendance(training_id, user_id, attended)
+        .mark_attendance(training_id, user_id, payload.attended)
         .await
         .http_err("mark attendance")?;
-
-    Ok(Json("Attendance marked successfully".to_string()))
+    Ok((StatusCode::OK, "Attendance marked successfully"))
 }
 
 async fn get_eligible_trainings(
     State(training_service): State<TrainingService>,
     Path(user_id): Path<Uuid>,
-) -> Result<Json<Vec<Training>>, Response> {
+) -> HttpResult<Json<Vec<Training>>> {
+    // Return type changed
     let trainings = training_service
         .get_eligible_trainings(user_id)
         .await
         .http_err("get eligible trainings")?;
-
     Ok(Json(trainings))
 }
 
-impl<T> HttpError<T> for use_cases::training_service::err::Result<T> {
+// HttpError implementation for TrainingService::Error
+impl<T> HttpError<T> for Result<T, Error> {
     fn http_err(self, endpoint_name: &str) -> crate::err::HttpResult<T> {
         self.map_err(|err| {
-            error!("Error in: {endpoint_name}");
-            match err {
-                Error::UnknownDatabaseError(error) => {
-                    error!("{error}");
-                    "We are having problems in the server, try again"
+            error!("Error in training endpoint ({}): {}", endpoint_name, err);
+            let (status_code, message) = match err {
+                Error::UnknownDatabaseError(e) => {
+                    error!("Training DB error: {}", e);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Database error processing training request.",
+                    )
                 }
-                Error::TrainingNotFound => "Training not found",
-                Error::UserAlreadyRegistered => "User already registered for this training",
-                Error::UserDoesNotMeetCategoryRequirements => {
-                    "User does not meet category requirements for this training"
+                Error::TrainingNotFound => (StatusCode::NOT_FOUND, "Training not found."),
+                Error::UserAlreadyRegistered => (
+                    StatusCode::CONFLICT,
+                    "User already registered for this training.",
+                ),
+                Error::UserDoesNotMeetCategoryRequirements => (
+                    StatusCode::FORBIDDEN,
+                    "User does not meet category requirements for this training.",
+                ),
+                Error::InvalidDates => (
+                    StatusCode::BAD_REQUEST,
+                    "Invalid training dates or duration.",
+                ),
+                Error::UserNotRegistered => (
+                    StatusCode::NOT_FOUND,
+                    "User not registered for this training.",
+                ),
+                Error::RegistrationNotFound => {
+                    (StatusCode::NOT_FOUND, "Training registration not found.")
                 }
-                Error::InvalidDates => "Invalid training dates",
-                Error::UserNotRegistered => "User not registered for this training",
-                Error::RegistrationNotFound => "Training registration not found",
-                Error::CategoryServiceError(_) => "Error in the category service",
-            }
-            .to_err_response()
+                Error::CategoryServiceError(e) => {
+                    error!("Category service error via training: {}", e);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Internal error with category service.",
+                    )
+                }
+                Error::CourtServiceError(e) => {
+                    // Map court service errors to appropriate HTTP responses
+                    error!("Court service error via training: {}", e);
+                    match e {
+                        use_cases::court_service::err::Error::CourtUnavailable => (
+                            StatusCode::CONFLICT,
+                            "Selected court is unavailable for the training time.",
+                        ),
+                        use_cases::court_service::err::Error::CourtNotFound => {
+                            (StatusCode::BAD_REQUEST, "Selected court not found.")
+                        }
+                        _ => (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Internal error with court service.",
+                        ),
+                    }
+                }
+                Error::UserServiceError(e) => {
+                    error!("User service error via training: {}", e);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Internal error with user service.",
+                    )
+                }
+                Error::TuitionServiceError(e) => {
+                    error!("Tuition service error via training: {}", e);
+                    (
+                        StatusCode::FORBIDDEN,
+                        "Tuition requirement not met for training.",
+                    )
+                }
+            };
+            (status_code, message.to_string()).into_response()
         })
     }
 }

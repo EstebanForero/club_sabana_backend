@@ -4,7 +4,7 @@ use crate::user_service;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum Error {
     #[error("Database error: {0}")]
     UnknownDatabaseError(String),

@@ -1,12 +1,7 @@
-use std::error::Error;
-
 use crate::{
-    category_service::{self, CategoryService},
-    request_service::RequestService,
-    tournament_service::TournamentService,
-    training_service::TrainingService,
-    tuition_service::TuitionService,
-    user_service::UserService,
+    category_service::CategoryService, request_service::RequestService,
+    tournament_service::TournamentService, training_service::TrainingService,
+    tuition_service::TuitionService, user_service::UserService,
 };
 use entities::report::{
     Report, TournamentSummary, TrainingSummary, TuitionSummary, UserCategory, UserRequest,

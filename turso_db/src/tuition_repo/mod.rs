@@ -14,13 +14,12 @@ impl TuitionRepository for TursoDb {
         self.execute_with_error(
             "INSERT INTO tuition (
 id_tuition, id_user, amount, payment_date, deleted
-) VALUES (?1, ?2, ?3, ?4, ?5)",
+) VALUES (?1, ?2, ?3, ?4, 0)", // deleted = 0
             params![
                 tuition.id_tuition.to_string(),
                 tuition.id_user.to_string(),
                 tuition.amount,
                 tuition.payment_date.format("%Y-%m-%d %H:%M:%S").to_string(),
-                0
             ],
             Error::UnknownDatabaseError,
         )
@@ -43,7 +42,7 @@ WHERE id_tuition = ?1 AND deleted = 0",
             "SELECT id_tuition, id_user, amount, payment_date 
 FROM tuition 
 WHERE id_user = ?1 AND deleted = 0
-ORDER BY payment_date DESC",
+ORDER BY payment_date DESC", // Keep order for "last payment" logic
             params![user_id.to_string()],
             Error::UnknownDatabaseError,
         )
@@ -67,20 +66,50 @@ WHERE deleted = 0",
             count: i64,
         }
 
-        let count: Count = self
+        let result: Option<Count> = self
             .query_one_with_error(
                 "SELECT COUNT(*) as count
 FROM tuition 
 WHERE id_user = ?1 
 AND deleted = 0 
-AND payment_date >= DATETIME('now', '-30 days')",
+AND payment_date >= date('now', '-30 days')", // Ensure date comparison works with SQLite TEXT dates
                 params![user_id.to_string()],
                 Error::UnknownDatabaseError,
             )
-            .await?
-            .unwrap_or(Count { count: 0 });
+            .await?;
 
-        Ok(count.count > 0)
+        Ok(result.map_or(false, |c| c.count > 0))
+    }
+
+    async fn has_active_tuition_with_amount(
+        &self,
+        user_id: Uuid,
+        required_amount: f64,
+    ) -> Result<bool> {
+        #[derive(Deserialize)]
+        struct MaxAmount {
+            max_amount: Option<f64>, // Amount can be NULL if no matching tuition
+        }
+
+        // Find the most recent active tuition and check its amount
+        let result: Option<MaxAmount> = self
+            .query_one_with_error(
+                "SELECT MAX(amount) as max_amount FROM tuition
+             WHERE id_user = ?1
+             AND deleted = 0
+             AND payment_date >= date('now', '-30 days')
+             ORDER BY payment_date DESC LIMIT 1", // Get the latest active one
+                params![user_id.to_string()],
+                Error::UnknownDatabaseError,
+            )
+            .await?;
+
+        match result {
+            Some(MaxAmount {
+                max_amount: Some(amount),
+            }) => Ok(amount >= required_amount),
+            _ => Ok(false), // No active tuition or amount is NULL
+        }
     }
 }
 
