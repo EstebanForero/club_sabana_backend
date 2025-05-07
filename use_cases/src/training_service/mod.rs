@@ -2,20 +2,19 @@ pub mod err;
 pub mod repository_trait;
 
 use chrono::{Duration, NaiveDateTime, Utc};
-// use chrono_tz::America::Bogota; // Not used directly if Utc::now().naive_utc() is preferred
 use err::{Error, Result};
 use repository_trait::{TrainingRegistrationRepository, TrainingRepository};
 
 use crate::{
     category_service::CategoryService,
-    court_service::CourtService,     // Added CourtService
-    tuition_service::TuitionService, // Added TuitionService
-    user_service::{err::Error as UserError, UserService}, // Added UserService for trainer validation
+    court_service::CourtService,
+    tuition_service::TuitionService,
+    user_service::{err::Error as UserError, UserService},
 };
 use entities::{
-    court::CourtReservationCreation, // Added
+    court::CourtReservationCreation,
     training::{Training, TrainingCreation, TrainingRegistration},
-    user::URol, // Added for trainer validation
+    user::URol,
 };
 use std::sync::Arc;
 use uuid::Uuid;
@@ -28,9 +27,9 @@ pub struct TrainingService {
     training_repo: Arc<dyn TrainingRepository>,
     registration_repo: Arc<dyn TrainingRegistrationRepository>,
     category_service: CategoryService,
-    court_service: CourtService,     // Added
-    user_service: UserService,       // Added
-    tuition_service: TuitionService, // Added
+    court_service: CourtService,
+    user_service: UserService,
+    tuition_service: TuitionService,
 }
 
 impl TrainingService {
@@ -38,17 +37,17 @@ impl TrainingService {
         training_repo: Arc<dyn TrainingRepository>,
         registration_repo: Arc<dyn TrainingRegistrationRepository>,
         category_service: CategoryService,
-        court_service: CourtService,     // Added
-        user_service: UserService,       // Added
-        tuition_service: TuitionService, // Added
+        court_service: CourtService,
+        user_service: UserService,
+        tuition_service: TuitionService,
     ) -> Self {
         Self {
             training_repo,
             registration_repo,
             category_service,
-            court_service,   // Added
-            user_service,    // Added
-            tuition_service, // Added
+            court_service,
+            user_service,
+            tuition_service,
         }
     }
 

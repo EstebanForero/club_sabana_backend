@@ -1,6 +1,5 @@
 use thiserror::Error;
 
-// Add imports if necessary for new error variants
 use crate::court_service;
 use crate::tuition_service;
 use crate::user_service;
@@ -34,11 +33,11 @@ pub enum Error {
     CategoryServiceError(#[from] crate::category_service::err::Error),
 
     #[error("Error in court service: {0}")]
-    CourtServiceError(#[from] court_service::err::Error), // New
+    CourtServiceError(#[from] court_service::err::Error),
 
     #[error("Error in user service: {0}")]
-    UserServiceError(#[from] user_service::err::Error), // New
+    UserServiceError(#[from] user_service::err::Error),
 
     #[error("Error in tuition service: {0}")]
-    TuitionServiceError(#[from] tuition_service::err::Error), // New
+    TuitionServiceError(#[from] tuition_service::err::Error),
 }
