@@ -26,12 +26,13 @@ pub trait CourtReservationRepository: Send + Sync {
     async fn get_reservation_by_id(&self, id_reservation: Uuid)
         -> Result<Option<CourtReservation>>;
     async fn delete_reservation_by_event_id(&self, event_id: Uuid, event_type: &str) -> Result<()>;
-    async fn get_reservations_for_training(
+    async fn get_reservation_for_training(
         &self,
         training_id: Uuid,
-    ) -> Result<Vec<CourtReservation>>;
-    async fn get_reservations_for_tournament(
+    ) -> Result<Option<CourtReservation>>;
+
+    async fn get_reservation_for_tournament(
         &self,
         tournament_id: Uuid,
-    ) -> Result<Vec<CourtReservation>>;
+    ) -> Result<Option<CourtReservation>>;
 }

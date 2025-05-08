@@ -35,7 +35,8 @@ impl CourtService {
         {
             return Err(Error::CourtNameExists);
         }
-        let court = court_creation.to_court(Uuid::new_v4());
+        let court_id = Uuid::new_v4();
+        let court = court_creation.to_court(court_id);
         self.court_repo.create_court(&court).await?;
         Ok(court)
     }
@@ -52,9 +53,8 @@ impl CourtService {
     }
 
     pub async fn delete_court(&self, id_court: Uuid) -> Result<()> {
-        let court = self.get_court(id_court).await?;
-
-        self.court_repo.delete_court(court.id_court).await
+        let _ = self.get_court(id_court).await?;
+        self.court_repo.delete_court(id_court).await
     }
 
     pub async fn create_reservation(
@@ -67,7 +67,8 @@ impl CourtService {
             return Err(Error::InvalidReservationTime);
         }
 
-        self.court_repo
+        let _ = self
+            .court_repo
             .get_court_by_id(reservation_creation.id_court)
             .await?
             .ok_or(Error::CourtNotFound)?;
@@ -78,7 +79,26 @@ impl CourtService {
         ) {
             (Some(_), Some(_)) => return Err(Error::ReservationPurposeConflict),
             (None, None) => return Err(Error::ReservationPurposeMissing),
-            _ => {}
+            (Some(training_id), None) => {
+                if self
+                    .reservation_repo
+                    .get_reservation_for_training(training_id)
+                    .await?
+                    .is_some()
+                {
+                    return Err(Error::CourtUnavailable);
+                }
+            }
+            (None, Some(tournament_id)) => {
+                if self
+                    .reservation_repo
+                    .get_reservation_for_tournament(tournament_id)
+                    .await?
+                    .is_some()
+                {
+                    return Err(Error::CourtUnavailable);
+                }
+            }
         }
 
         if !self
@@ -93,7 +113,8 @@ impl CourtService {
             return Err(Error::CourtUnavailable);
         }
 
-        let reservation = reservation_creation.to_court_reservation(Uuid::new_v4());
+        let reservation_id = Uuid::new_v4();
+        let reservation = reservation_creation.to_court_reservation(reservation_id);
         self.reservation_repo
             .create_reservation(&reservation)
             .await?;
@@ -105,6 +126,24 @@ impl CourtService {
             .get_reservation_by_id(id_reservation)
             .await?
             .ok_or(Error::ReservationNotFound)
+    }
+
+    pub async fn get_reservations_for_court(
+        &self,
+        id_court: Uuid,
+        start_datetime_filter: Option<NaiveDateTime>,
+        end_datetime_filter: Option<NaiveDateTime>,
+    ) -> Result<Vec<CourtReservation>> {
+        let start = start_datetime_filter.unwrap_or_else(|| {
+            NaiveDateTime::parse_from_str("1970-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap()
+        });
+        let end = end_datetime_filter.unwrap_or_else(|| {
+            NaiveDateTime::parse_from_str("9999-12-31 23:59:59", "%Y-%m-%d %H:%M:%S").unwrap()
+        });
+
+        self.reservation_repo
+            .get_reservations_for_court_in_range(id_court, start, end)
+            .await
     }
 
     pub async fn is_court_available(
@@ -140,21 +179,21 @@ impl CourtService {
             .await
     }
 
-    pub async fn get_reservations_for_training(
+    pub async fn get_reservation_for_training(
         &self,
         training_id: Uuid,
-    ) -> Result<Vec<CourtReservation>> {
+    ) -> Result<Option<CourtReservation>> {
         self.reservation_repo
-            .get_reservations_for_training(training_id)
+            .get_reservation_for_training(training_id)
             .await
     }
 
-    pub async fn get_reservations_for_tournament(
+    pub async fn get_reservation_for_tournament(
         &self,
         tournament_id: Uuid,
-    ) -> Result<Vec<CourtReservation>> {
+    ) -> Result<Option<CourtReservation>> {
         self.reservation_repo
-            .get_reservations_for_tournament(tournament_id)
+            .get_reservation_for_tournament(tournament_id)
             .await
     }
 }

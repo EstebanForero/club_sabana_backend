@@ -1,32 +1,60 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     middleware,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
-use entities::court::{Court, CourtCreation};
+use entities::court::{Court, CourtCreation, CourtReservation, CourtReservationsQuery};
 use tracing::error;
 use use_cases::court_service::{err::Error as CourtServiceError, CourtService};
 use uuid::Uuid;
 
 use super::err::HttpError;
-use crate::{
-    auth::auth_middleware, // Assuming some endpoints might need auth
-    err::HttpResult,
-};
+use crate::{auth::auth_middleware, err::HttpResult};
 
 pub fn court_router(court_service: CourtService, jwt_key: String) -> Router {
+    let reservation_router = Router::new()
+        .route(
+            "/by-training/{training_id}",
+            get(get_reservation_by_training_id),
+        )
+        .route(
+            "/by-tournament/{tournament_id}",
+            get(get_reservation_by_tournament_id),
+        );
+
     Router::new()
         .route("/health-court", get(alive))
         .route("/courts", post(create_court).get(list_courts))
         .route("/courts/{id_court}", get(get_court).delete(delete_court))
-        // .route("/courts/{id_court}/reservations", post(create_reservation_for_court))
-        // .route("/courts/reservations/{id_reservation}", get(get_reservation).delete(delete_reservation))
-        // For now, court reservation is handled internally by training/tournament services.
-        .route_layer(middleware::from_fn_with_state(jwt_key, auth_middleware)) // Apply auth to all court routes for now
+        .route(
+            "/courts/{id_court}/reservations",
+            get(get_reservations_for_court_endpoint),
+        )
+        .nest("/court-reservations", reservation_router)
+        .route_layer(middleware::from_fn_with_state(
+            jwt_key.clone(),
+            auth_middleware,
+        ))
         .with_state(court_service)
+}
+
+async fn get_reservations_for_court_endpoint(
+    State(court_service): State<CourtService>,
+    Path(id_court): Path<Uuid>,
+    Query(params): Query<CourtReservationsQuery>,
+) -> HttpResult<Json<Vec<CourtReservation>>> {
+    let reservations = court_service
+        .get_reservations_for_court(
+            id_court,
+            params.start_datetime_filter,
+            params.end_datetime_filter,
+        )
+        .await
+        .http_err("get reservations for court")?;
+    Ok(Json(reservations))
 }
 
 async fn alive() -> &'static str {
@@ -69,6 +97,44 @@ async fn delete_court(
         .await
         .http_err("delete court")?;
     Ok((StatusCode::OK, "Court deleted successfully"))
+}
+
+async fn get_reservation_by_training_id(
+    State(court_service): State<CourtService>,
+    Path(training_id): Path<Uuid>,
+) -> Result<Json<CourtReservation>, impl IntoResponse> {
+    match court_service
+        .get_reservation_for_training(training_id)
+        .await
+        .http_err("get reservation by training id")
+    {
+        Ok(Some(reservation)) => Ok(Json(reservation)),
+        Ok(None) => Err((
+            StatusCode::NOT_FOUND,
+            "No reservation found for this training",
+        )
+            .into_response()),
+        Err(e) => Err(e),
+    }
+}
+
+async fn get_reservation_by_tournament_id(
+    State(court_service): State<CourtService>,
+    Path(tournament_id): Path<Uuid>,
+) -> Result<Json<CourtReservation>, impl IntoResponse> {
+    match court_service
+        .get_reservation_for_tournament(tournament_id)
+        .await
+        .http_err("get reservation by tournament id")
+    {
+        Ok(Some(reservation)) => Ok(Json(reservation)),
+        Ok(None) => Err((
+            StatusCode::NOT_FOUND,
+            "No reservation found for this tournament",
+        )
+            .into_response()),
+        Err(e) => Err(e),
+    }
 }
 
 impl<T> HttpError<T> for Result<T, CourtServiceError> {

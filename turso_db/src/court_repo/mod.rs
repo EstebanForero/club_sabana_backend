@@ -131,11 +131,11 @@ impl CourtReservationRepository for TursoDb {
         .await
     }
 
-    async fn get_reservations_for_training(
+    async fn get_reservation_for_training(
         &self,
         training_id: Uuid,
-    ) -> Result<Vec<CourtReservation>> {
-        self.query_many_with_error(
+    ) -> Result<Option<CourtReservation>> {
+        self.query_one_with_error(
             "SELECT id_court_reservation, id_court, start_reservation_datetime, end_reservation_datetime, id_training, id_tournament 
              FROM court_reservation 
              WHERE id_training = ?1 AND deleted = 0",
@@ -144,11 +144,11 @@ impl CourtReservationRepository for TursoDb {
         ).await
     }
 
-    async fn get_reservations_for_tournament(
+    async fn get_reservation_for_tournament(
         &self,
         tournament_id: Uuid,
-    ) -> Result<Vec<CourtReservation>> {
-        self.query_many_with_error(
+    ) -> Result<Option<CourtReservation>> {
+        self.query_one_with_error(
             "SELECT id_court_reservation, id_court, start_reservation_datetime, end_reservation_datetime, id_training, id_tournament 
              FROM court_reservation 
              WHERE id_tournament = ?1 AND deleted = 0",

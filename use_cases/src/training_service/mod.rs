@@ -162,6 +162,7 @@ impl TrainingService {
         training_update_payload: TrainingCreation,
         id_court_to_reserve: Option<Uuid>,
     ) -> Result<Training> {
+        // ... (validation logic as before) ...
         let mut training = self.get_training(training_id).await?;
 
         validate_event_duration(
@@ -169,7 +170,6 @@ impl TrainingService {
             training_update_payload.end_datetime,
         )?;
 
-        // Validate new trainer_id if changed
         if training.trainer_id != training_update_payload.trainer_id {
             let trainer = self
                 .user_service
@@ -190,7 +190,6 @@ impl TrainingService {
             }
         }
 
-        // Validate new category_id if changed
         if training.id_category != training_update_payload.id_category {
             let _ = self
                 .category_service
@@ -198,7 +197,6 @@ impl TrainingService {
                 .await?;
         }
 
-        // Update fields
         training.name = training_update_payload.name;
         training.id_category = training_update_payload.id_category;
         training.trainer_id = training_update_payload.trainer_id;
@@ -206,20 +204,32 @@ impl TrainingService {
         training.end_datetime = training_update_payload.end_datetime;
         training.minimum_payment = training_update_payload.minimum_payment;
 
-        let existing_reservations = self
+        // Handle court reservation change
+        // 1. Delete existing reservation for this training if any
+        if let Some(existing_res) = self
             .court_service
-            .get_reservations_for_training(training_id)
-            .await
-            .map_err(Error::CourtServiceError)?; // Map court service error
+            .get_reservation_for_training(training_id)
+            .await // Now returns Option
+            .map_err(|e| Error::CourtServiceError(e))?
+        {
+            // Check if the court or time is changing, or if no new court is specified
+            let times_changed = existing_res.start_reservation_datetime != training.start_datetime
+                || existing_res.end_reservation_datetime != training.end_datetime;
+            let court_changed =
+                id_court_to_reserve.is_some() && Some(existing_res.id_court) != id_court_to_reserve;
 
-        for _ in existing_reservations {
-            self.court_service
-                .delete_reservation_for_event(training_id, "training")
-                .await
-                .map_err(Error::CourtServiceError)?;
+            if times_changed || court_changed || id_court_to_reserve.is_none() {
+                self.court_service
+                    .delete_reservation_for_event(training_id, "training")
+                    .await
+                    .map_err(|e| Error::CourtServiceError(e))?;
+            }
         }
 
+        // 2. Create new reservation if id_court_to_reserve is Some AND (it's a new court OR times changed for existing court)
         if let Some(id_court) = id_court_to_reserve {
+            // Re-check if a reservation for this court/time already exists from previous step to avoid race if delete was slow
+            // Or simply attempt to create; create_reservation should handle conflicts.
             let reservation_creation = CourtReservationCreation {
                 id_court,
                 start_reservation_datetime: training.start_datetime,
@@ -227,12 +237,24 @@ impl TrainingService {
                 id_training: Some(training.id_training),
                 id_tournament: None,
             };
-            if let Err(e) = self
+            // Only create if no existing reservation for this new configuration,
+            // or if the existing one was for a different court/time and got deleted.
+            // This logic can be tricky. The `create_reservation` should be idempotent or check availability.
+            // For simplicity, we assume `create_reservation` handles `CourtUnavailable` correctly.
+            if self
                 .court_service
-                .create_reservation(reservation_creation)
-                .await
+                .get_reservation_for_training(training_id)
+                .await?
+                .is_none()
             {
-                return Err(Error::CourtServiceError(e));
+                // If no reservation exists now
+                if let Err(e) = self
+                    .court_service
+                    .create_reservation(reservation_creation)
+                    .await
+                {
+                    return Err(Error::CourtServiceError(e));
+                }
             }
         }
 

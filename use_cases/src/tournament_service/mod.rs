@@ -50,7 +50,7 @@ impl TournamentService {
     pub async fn create_tournament(
         &self,
         tournament_creation: TournamentCreation,
-        id_court_to_reserve: Option<Uuid>, // Added
+        id_court_to_reserve: Option<Uuid>,
     ) -> Result<Tournament> {
         validate_event_duration(
             tournament_creation.start_datetime,
@@ -91,17 +91,10 @@ impl TournamentService {
         Ok(tournament)
     }
 
-    pub async fn get_tournament(&self, id: Uuid) -> Result<Tournament> {
-        self.tournament_repo
-            .get_tournament_by_id(id)
-            .await?
-            .ok_or(Error::TournamentNotFound)
-    }
-
     pub async fn update_tournament(
         &self,
         tournament_id: Uuid,
-        tournament_update_payload: TournamentCreation, // Using TournamentCreation for update DTO
+        tournament_update_payload: TournamentCreation,
         id_court_to_reserve: Option<Uuid>,
     ) -> Result<Tournament> {
         let mut tournament = self.get_tournament(tournament_id).await?;
@@ -111,7 +104,6 @@ impl TournamentService {
             tournament_update_payload.end_datetime,
         )?;
 
-        // Validate new category_id if changed
         if tournament.id_category != tournament_update_payload.id_category {
             let _ = self
                 .category_service
@@ -119,56 +111,65 @@ impl TournamentService {
                 .await?;
         }
 
-        // Update fields
         tournament.name = tournament_update_payload.name;
         tournament.id_category = tournament_update_payload.id_category;
         tournament.start_datetime = tournament_update_payload.start_datetime;
         tournament.end_datetime = tournament_update_payload.end_datetime;
 
         // Handle court reservation change
-        let existing_reservations =
-            self.court_service
-                .get_reservations_for_tournament(tournament_id)
-                .await
-                .map_err(|e| {
-                    Error::CourtServiceError(court_service::err::Error::UnknownDatabaseError(
-                        format!("Failed to get existing court reservations: {}", e),
-                    ))
-                })?;
+        if let Some(existing_res) = self
+            .court_service
+            .get_reservation_for_tournament(tournament_id)
+            .await // Now returns Option
+            .map_err(|e| Error::CourtServiceError(e))?
+        {
+            let times_changed = existing_res.start_reservation_datetime
+                != tournament.start_datetime
+                || existing_res.end_reservation_datetime != tournament.end_datetime;
+            let court_changed =
+                id_court_to_reserve.is_some() && Some(existing_res.id_court) != id_court_to_reserve;
 
-        for res in existing_reservations {
-            self.court_service
-                .delete_reservation_for_event(tournament_id, "tournament")
-                .await
-                .map_err(|e| {
-                    Error::CourtServiceError(court_service::err::Error::UnknownDatabaseError(
-                        format!(
-                            "Failed to delete old court reservation {}: {}",
-                            res.id_court_reservation, e
-                        ),
-                    ))
-                })?;
+            if times_changed || court_changed || id_court_to_reserve.is_none() {
+                self.court_service
+                    .delete_reservation_for_event(tournament_id, "tournament")
+                    .await
+                    .map_err(|e| Error::CourtServiceError(e))?;
+            }
         }
 
         if let Some(id_court) = id_court_to_reserve {
-            let reservation_creation = CourtReservationCreation {
-                id_court,
-                start_reservation_datetime: tournament.start_datetime,
-                end_reservation_datetime: tournament.end_datetime,
-                id_training: None,
-                id_tournament: Some(tournament.id_tournament),
-            };
-            if let Err(e) = self
+            if self
                 .court_service
-                .create_reservation(reservation_creation)
-                .await
+                .get_reservation_for_tournament(tournament_id)
+                .await?
+                .is_none()
             {
-                return Err(Error::CourtServiceError(e));
+                let reservation_creation = CourtReservationCreation {
+                    id_court,
+                    start_reservation_datetime: tournament.start_datetime,
+                    end_reservation_datetime: tournament.end_datetime,
+                    id_training: None,
+                    id_tournament: Some(tournament.id_tournament),
+                };
+                if let Err(e) = self
+                    .court_service
+                    .create_reservation(reservation_creation)
+                    .await
+                {
+                    return Err(Error::CourtServiceError(e));
+                }
             }
         }
 
         self.tournament_repo.update_tournament(&tournament).await?;
         Ok(tournament)
+    }
+
+    pub async fn get_tournament(&self, id: Uuid) -> Result<Tournament> {
+        self.tournament_repo
+            .get_tournament_by_id(id)
+            .await?
+            .ok_or(Error::TournamentNotFound)
     }
 
     pub async fn delete_tournament(&self, id: Uuid) -> Result<()> {

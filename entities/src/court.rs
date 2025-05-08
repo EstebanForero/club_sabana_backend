@@ -1,9 +1,9 @@
+use crate::datetime_serde;
+use crate::datetime_serde_option;
 use chrono::NaiveDateTime;
 use partial_struct::Partial;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-
-use super::datetime_serde;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Partial)]
 #[partial(
@@ -31,4 +31,12 @@ pub struct CourtReservation {
     pub end_reservation_datetime: NaiveDateTime,
     pub id_training: Option<Uuid>,
     pub id_tournament: Option<Uuid>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CourtReservationsQuery {
+    #[serde(with = "datetime_serde_option", default)]
+    pub start_datetime_filter: Option<NaiveDateTime>,
+    #[serde(with = "datetime_serde_option", default)]
+    pub end_datetime_filter: Option<NaiveDateTime>,
 }
