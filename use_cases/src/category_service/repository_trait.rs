@@ -1,7 +1,7 @@
 use super::err::Result;
 use async_trait::async_trait;
 use entities::{
-    category::{Category, CategoryRequirement, Level},
+    category::{Category, CategoryRequirement, Level, LevelName},
     user::UserCategory,
 };
 use uuid::Uuid;
@@ -50,4 +50,13 @@ pub trait UserCategoryRepository: Send + Sync {
     async fn create_user_category(&self, user_category: &UserCategory) -> Result<()>;
 
     async fn get_user_categories(&self, user_id: Uuid) -> Result<Vec<UserCategory>>;
+
+    async fn update_user_category(
+        &self,
+        user_id: Uuid,
+        id_category: Uuid,
+        new_level: Level,
+    ) -> Result<()>;
+
+    async fn delete_user_category(&self, user_id: Uuid, id_category: Uuid) -> Result<()>;
 }

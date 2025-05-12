@@ -2,11 +2,11 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use entities::{
-    category::{Category, CategoryCreation, CategoryRequirement},
+    category::{Category, CategoryCreation, CategoryRequirement, LevelName},
     user::UserCategory,
 };
 use tracing::error;
@@ -38,11 +38,19 @@ pub fn category_router(category_service: CategoryService) -> Router {
             delete(remove_requirement),
         )
         .route(
+            "/categories/{id}/user/{id}/level/{level}",
+            put(update_user_category_level),
+        )
+        .route(
+            "/categories/{category_id}/user/{user_id}",
+            delete(delete_user_from_category_endpoint),
+        )
+        .route(
             "/categories/{category_id}/users/{user_id}",
             post(register_user_in_category).get(get_user_category),
         )
         .route(
-            "/categories/{category_id}/users/{user_id}/eligible", // New eligibility check route
+            "/categories/{category_id}/users/{user_id}/eligible",
             get(check_user_eligibility),
         )
         .route("/categories/user/{user_id}", get(get_user_categories))
@@ -63,6 +71,30 @@ async fn check_user_eligibility(
         .http_err("check user eligibility")?;
 
     Ok(Json(true))
+}
+
+async fn delete_user_from_category_endpoint(
+    State(category_service): State<CategoryService>,
+    Path((category_id, user_id)): Path<(Uuid, Uuid)>,
+) -> HttpResult<impl IntoResponse> {
+    category_service
+        .delete_user_from_category(user_id, category_id)
+        .await
+        .http_err("Failed to remove user from category")?;
+
+    Ok((StatusCode::OK, "User successfully removed from category."))
+}
+
+async fn update_user_category_level(
+    State(category_service): State<CategoryService>,
+    Path((category_id, user_id, level_name)): Path<(Uuid, Uuid, LevelName)>,
+) -> HttpResult<impl IntoResponse> {
+    category_service
+        .update_user_category_level(user_id, category_id, level_name)
+        .await
+        .http_err("error, update user category level")?;
+
+    Ok((StatusCode::OK, "User registered in category successfully"))
 }
 
 async fn register_user_in_category(

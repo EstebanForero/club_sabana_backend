@@ -84,6 +84,39 @@ WHERE deleted = 0 AND id_category = ?1",
 
 #[async_trait]
 impl UserCategoryRepository for TursoDb {
+    async fn update_user_category(
+        &self,
+        user_id: Uuid,
+        id_category: Uuid,
+        new_level: Level,
+    ) -> Result<()> {
+        let sql =
+            "UPDATE user_category SET user_level = ?1 WHERE id_user = ?2 AND id_category = ?3";
+
+        self.execute_with_error(
+            sql,
+            params![
+                new_level.level_name.to_string(),
+                user_id.to_string(),
+                id_category.to_string()
+            ],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
+    async fn delete_user_category(&self, user_id: Uuid, id_category: Uuid) -> Result<()> {
+        let sql =
+            "DELETE FROM user_category WHERE id_user = ?1 AND id_category = ?2 AND deleted = 0";
+
+        self.execute_with_error(
+            sql,
+            params![user_id.to_string(), id_category.to_string()],
+            Error::UnknownDatabaseError,
+        )
+        .await
+    }
+
     async fn get_user_category(
         &self,
         id_user: Uuid,
@@ -121,7 +154,7 @@ impl UserCategoryRepository for TursoDb {
             Error::UnknownDatabaseError,
         )
         .await
-        .map(|_| true)
+        .map(|option| option.is_some())
     }
 
     async fn create_user_category(&self, user_category: &UserCategory) -> Result<()> {

@@ -1,11 +1,12 @@
 use chrono::Utc;
 use entities::{
-    category::{Category, CategoryCreation, CategoryRequirement, LevelName},
+    category::{Category, CategoryCreation, CategoryRequirement, Level, LevelName},
     user::UserCategory,
 };
 use err::{Error, Result};
 use repository_trait::{CategoryRepository, CategoryRequirementRepository, UserCategoryRepository};
 use std::sync::Arc;
+use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::user_service::UserService;
@@ -34,6 +35,29 @@ impl CategoryService {
             user_category_repo,
             user_service,
         }
+    }
+
+    pub async fn delete_user_from_category(&self, user_id: Uuid, category_id: Uuid) -> Result<()> {
+        self.user_category_repo
+            .delete_user_category(user_id, category_id)
+            .await
+    }
+
+    pub async fn update_user_category_level(
+        &self,
+        user_id: Uuid,
+        category_id: Uuid,
+        new_level: LevelName,
+    ) -> Result<()> {
+        self.user_category_repo
+            .update_user_category(
+                user_id,
+                category_id,
+                Level {
+                    level_name: new_level,
+                },
+            )
+            .await
     }
 
     //  delete_category
@@ -125,6 +149,7 @@ impl CategoryService {
         user_id: Uuid,
         category_id: Uuid,
     ) -> Result<Option<UserCategory>> {
+        info!("user_id: {user_id}, category_id: {category_id}");
         self.user_category_repo
             .get_user_category(user_id, category_id)
             .await
@@ -194,7 +219,7 @@ impl CategoryService {
 
         for requirement in requirements {
             match self
-                .get_user_category(user_id, requirement.id_category)
+                .get_user_category(user_id, requirement.id_category_requirement)
                 .await?
             {
                 Some(user_prerequisite_category) => {
