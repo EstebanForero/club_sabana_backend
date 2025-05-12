@@ -53,7 +53,15 @@ impl CourtService {
     }
 
     pub async fn delete_court(&self, id_court: Uuid) -> Result<()> {
-        let _ = self.get_court(id_court).await?;
+        let reservation_exists = self
+            .reservation_repo
+            .court_has_reservations(id_court)
+            .await?;
+
+        if reservation_exists {
+            return Err(Error::ReservationExists);
+        }
+
         self.court_repo.delete_court(id_court).await
     }
 
