@@ -7,6 +7,7 @@ use axum::{
 };
 use entities::tournament::{
     Tournament, TournamentAttendance, TournamentCreation, TournamentRegistration,
+    TournamentRegistrationRequest,
 };
 use serde::Deserialize;
 use tracing::error;
@@ -174,14 +175,13 @@ async fn list_tournaments(
 async fn register_user_for_tournament(
     State(tournament_service): State<TournamentService>,
     Path(id_tournament): Path<Uuid>,
-    Json(mut registration_payload): Json<TournamentRegistration>,
+    Json(registration_payload): Json<TournamentRegistrationRequest>,
 ) -> HttpResult<Json<TournamentRegistration>> {
-    registration_payload.id_tournament = id_tournament;
-
     let registration = tournament_service
-        .register_user(registration_payload)
+        .register_user(registration_payload, id_tournament)
         .await
         .http_err("register user for tournament")?;
+
     Ok(Json(registration))
 }
 

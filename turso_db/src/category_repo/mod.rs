@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use entities::category::{Category, CategoryRequirement, Level};
 use entities::user::UserCategory;
 use libsql::{de, params};
+use serde::Deserialize;
 use use_cases::category_service::err::{Error, Result};
 use use_cases::category_service::repository_trait::{
     CategoryRepository, CategoryRequirementRepository, LevelRepository, UserCategoryRepository,
@@ -148,9 +149,14 @@ impl UserCategoryRepository for TursoDb {
     }
 
     async fn user_has_category(&self, id_user: Uuid, id_category: Uuid) -> Result<bool> {
-        self.query_one_with_error::<i32, Error>(
-            "SELECT 1 FROM user_category WHERE id_category = ?1 AND id_user = ?2 AND deleted = 0",
-            params![id_user.to_string(), id_category.to_string()],
+        #[derive(Deserialize)]
+        struct HasCategoryQuery {
+            quantity: i32,
+        }
+
+        self.query_one_with_error::<HasCategoryQuery, Error>(
+            "SELECT 1 as quantity FROM user_category WHERE id_category = ?1 AND id_user = ?2 AND deleted = 0",
+            params![id_category.to_string(), id_user.to_string()],
             Error::UnknownDatabaseError,
         )
         .await

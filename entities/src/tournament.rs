@@ -20,7 +20,12 @@ pub struct Tournament {
     pub end_datetime: NaiveDateTime,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Partial)]
+#[partial(
+    "TournamentRegistrationRequest",
+    derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq),
+    omit(id_tournament, registration_datetime)
+)]
 pub struct TournamentRegistration {
     pub id_tournament: Uuid,
     pub id_user: Uuid,

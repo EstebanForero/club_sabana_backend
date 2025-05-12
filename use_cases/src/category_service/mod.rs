@@ -156,6 +156,7 @@ impl CategoryService {
     }
 
     pub async fn user_has_category(&self, user_id: Uuid, category_id: Uuid) -> Result<bool> {
+        info!("[User has category]. user id: {user_id} | category id: {category_id}");
         self.user_category_repo
             .user_has_category(user_id, category_id)
             .await

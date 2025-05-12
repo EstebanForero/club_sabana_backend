@@ -10,7 +10,10 @@ use self::err::{Error, Result};
 use chrono::{Duration, NaiveDateTime, Utc};
 use entities::{
     court::CourtReservationCreation, // Added
-    tournament::{Tournament, TournamentAttendance, TournamentCreation, TournamentRegistration},
+    tournament::{
+        Tournament, TournamentAttendance, TournamentCreation, TournamentRegistration,
+        TournamentRegistrationRequest,
+    },
 };
 use repository_trait::{
     TournamentAttendanceRepository, TournamentRegistrationRepository, TournamentRepository,
@@ -195,11 +198,10 @@ impl TournamentService {
 
     pub async fn register_user(
         &self,
-        registration_payload: TournamentRegistration,
+        registration_payload: TournamentRegistrationRequest,
+        tournament_id: Uuid,
     ) -> Result<TournamentRegistration> {
-        let tournament = self
-            .get_tournament(registration_payload.id_tournament)
-            .await?;
+        let tournament = self.get_tournament(tournament_id).await?;
 
         if !self
             .category_service
@@ -211,10 +213,7 @@ impl TournamentService {
 
         if self
             .registration_repo
-            .get_tournament_registration(
-                registration_payload.id_tournament,
-                registration_payload.id_user,
-            )
+            .get_tournament_registration(tournament_id, registration_payload.id_user)
             .await?
             .is_some()
         {
@@ -223,7 +222,7 @@ impl TournamentService {
 
         // Use registration_payload directly as it now contains all necessary fields including id_tournament
         let registration_to_create = TournamentRegistration {
-            id_tournament: registration_payload.id_tournament,
+            id_tournament: tournament_id,
             id_user: registration_payload.id_user,
             registration_datetime: Utc::now().naive_utc(), // Set current time
         };
