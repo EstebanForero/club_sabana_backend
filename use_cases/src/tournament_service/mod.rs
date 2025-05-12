@@ -203,6 +203,12 @@ impl TournamentService {
     ) -> Result<TournamentRegistration> {
         let tournament = self.get_tournament(tournament_id).await?;
 
+        let now = Utc::now().naive_utc();
+
+        if now >= tournament.start_datetime {
+            return Err(Error::InvalidRegistrationDate);
+        }
+
         if !self
             .category_service
             .user_has_category(registration_payload.id_user, tournament.id_category)
