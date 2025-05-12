@@ -162,7 +162,6 @@ impl TrainingService {
         training_update_payload: TrainingCreation,
         id_court_to_reserve: Option<Uuid>,
     ) -> Result<Training> {
-        // ... (validation logic as before) ...
         let mut training = self.get_training(training_id).await?;
 
         validate_event_duration(
@@ -210,7 +209,7 @@ impl TrainingService {
             .court_service
             .get_reservation_for_training(training_id)
             .await // Now returns Option
-            .map_err(|e| Error::CourtServiceError(e))?
+            .map_err(Error::CourtServiceError)?
         {
             // Check if the court or time is changing, or if no new court is specified
             let times_changed = existing_res.start_reservation_datetime != training.start_datetime
@@ -222,7 +221,7 @@ impl TrainingService {
                 self.court_service
                     .delete_reservation_for_event(training_id, "training")
                     .await
-                    .map_err(|e| Error::CourtServiceError(e))?;
+                    .map_err(Error::CourtServiceError)?;
             }
         }
 
@@ -321,6 +320,12 @@ impl TrainingService {
             .await?
             .ok_or(Error::TrainingNotFound)?;
 
+        let now = Utc::now().naive_utc();
+
+        if now > training.start_datetime {
+            return Err(Error::InvalidRegistrationDate);
+        }
+
         if !self
             .category_service
             .user_has_category(registration_payload.id_user, training.id_category)
@@ -380,7 +385,13 @@ impl TrainingService {
         user_id: Uuid,
         attended: bool,
     ) -> Result<()> {
-        let _ = self.get_training(training_id).await?;
+        let training = self.get_training(training_id).await?;
+
+        let now = Utc::now().naive_utc();
+
+        if now <= training.start_datetime || now >= training.end_datetime {
+            return Err(Error::InvalidAssistanceDate);
+        }
 
         let _ = self
             .registration_repo

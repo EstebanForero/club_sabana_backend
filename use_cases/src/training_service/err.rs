@@ -40,4 +40,10 @@ pub enum Error {
 
     #[error("Error in tuition service: {0}")]
     TuitionServiceError(#[from] tuition_service::err::Error),
+
+    #[error("The event hasn't started, wait until the event starts to register assistances")]
+    InvalidAssistanceDate,
+
+    #[error("Users can register only before an event starts")]
+    InvalidRegistrationDate,
 }
