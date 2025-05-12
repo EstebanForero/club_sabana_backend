@@ -6,8 +6,8 @@ use axum::{
     Json, Router,
 };
 use entities::tournament::{
-    Tournament, TournamentAttendance, TournamentCreation, TournamentRegistration,
-    TournamentRegistrationRequest,
+    Tournament, TournamentAttendance, TournamentAttendanceRequest, TournamentCreation,
+    TournamentRegistration, TournamentRegistrationRequest,
 };
 use serde::Deserialize;
 use tracing::error;
@@ -188,12 +188,10 @@ async fn register_user_for_tournament(
 async fn record_attendance(
     State(tournament_service): State<TournamentService>,
     Path(id_tournament): Path<Uuid>,
-    Json(mut attendance_payload): Json<TournamentAttendance>,
+    Json(attendance_payload): Json<TournamentAttendanceRequest>,
 ) -> HttpResult<Json<TournamentAttendance>> {
-    attendance_payload.id_tournament = id_tournament;
-
     let attendance = tournament_service
-        .record_attendance(attendance_payload)
+        .record_attendance(attendance_payload, id_tournament)
         .await
         .http_err("record attendance")?;
     Ok(Json(attendance))
@@ -333,6 +331,14 @@ impl<T> HttpError<T> for Result<T, Error> {
                         ),
                     }
                 }
+                Error::InvalidAssistanceDate => (
+                    StatusCode::BAD_REQUEST,
+                    "Invalid assistance date, the tournament hasn't started",
+                ),
+                Error::InvalidRegistrationDate => (
+                    StatusCode::BAD_REQUEST,
+                    "Users can only register, before the tournament starts",
+                ),
             };
             (status_code, message.to_string()).into_response()
         })

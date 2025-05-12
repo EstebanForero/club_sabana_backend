@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use chrono::{Datelike, NaiveDate, Utc}; // Added Days, NaiveDate, Datelike
-                                        // use chrono_tz::America::Bogota; // Not directly used if Utc::now().naive_utc() is preferred
+use chrono::{Datelike, NaiveDate, Utc};
 use entities::user::{URol, UserCreation, UserInfo, UserLogInInfo};
 use hasher_trait::PasswordHasher;
 use repository_trait::UserRepository;

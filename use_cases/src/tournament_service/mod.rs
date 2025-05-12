@@ -11,8 +11,8 @@ use chrono::{Duration, NaiveDateTime, Utc};
 use entities::{
     court::CourtReservationCreation, // Added
     tournament::{
-        Tournament, TournamentAttendance, TournamentCreation, TournamentRegistration,
-        TournamentRegistrationRequest,
+        Tournament, TournamentAttendance, TournamentAttendanceRequest, TournamentCreation,
+        TournamentRegistration, TournamentRegistrationRequest,
     },
 };
 use repository_trait::{
@@ -124,7 +124,7 @@ impl TournamentService {
             .court_service
             .get_reservation_for_tournament(tournament_id)
             .await // Now returns Option
-            .map_err(|e| Error::CourtServiceError(e))?
+            .map_err(Error::CourtServiceError)?
         {
             let times_changed = existing_res.start_reservation_datetime
                 != tournament.start_datetime
@@ -136,7 +136,7 @@ impl TournamentService {
                 self.court_service
                     .delete_reservation_for_event(tournament_id, "tournament")
                     .await
-                    .map_err(|e| Error::CourtServiceError(e))?;
+                    .map_err(Error::CourtServiceError)?;
             }
         }
 
@@ -236,35 +236,36 @@ impl TournamentService {
 
     pub async fn record_attendance(
         &self,
-        attendance_payload: TournamentAttendance,
+        attendance_payload: TournamentAttendanceRequest,
+        tournament_id: Uuid,
     ) -> Result<TournamentAttendance> {
-        let _ = self
-            .get_tournament(attendance_payload.id_tournament)
-            .await?;
+        let tournament = self.get_tournament(tournament_id).await?;
+
+        let now = Utc::now().naive_utc();
+
+        if tournament.start_datetime >= now {
+            return Err(Error::InvalidAssistanceDate);
+        }
+
+        if tournament.end_datetime <= now {
+            return Err(Error::InvalidAssistanceDate);
+        }
 
         if self
             .registration_repo
-            .get_tournament_registration(
-                attendance_payload.id_tournament,
-                attendance_payload.id_user,
-            )
+            .get_tournament_registration(tournament_id, attendance_payload.id_user)
             .await?
             .is_none()
         {
             return Err(Error::UserNotRegistered);
         }
 
-        // Check if user already has attendance recorded (to prevent duplicate entries, decide if update or error)
         if self
             .attendance_repo
-            .get_tournament_attendance_by_user(
-                attendance_payload.id_tournament,
-                attendance_payload.id_user,
-            )
+            .get_tournament_attendance_by_user(tournament_id, attendance_payload.id_user)
             .await?
             .is_some()
         {
-            // For now, let's assume we prevent re-recording if already attended. Or this could be an update.
             return Err(Error::UnknownDatabaseError(
                 "User attendance already recorded for this tournament.".to_string(),
             ));
@@ -274,10 +275,9 @@ impl TournamentService {
             return Err(Error::NegativePosition);
         }
 
-        // Check if position is already taken
         let existing_attendance = self
             .attendance_repo
-            .get_tournament_attendance(attendance_payload.id_tournament)
+            .get_tournament_attendance(tournament_id)
             .await?;
         if existing_attendance
             .iter()
@@ -287,9 +287,9 @@ impl TournamentService {
         }
 
         let attendance = TournamentAttendance {
-            id_tournament: attendance_payload.id_tournament,
+            id_tournament: tournament_id,
             id_user: attendance_payload.id_user,
-            attendance_datetime: Utc::now().naive_utc(), // Set current time
+            attendance_datetime: Utc::now().naive_utc(),
             position: attendance_payload.position,
         };
 

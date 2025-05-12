@@ -31,4 +31,8 @@ pub enum Error {
     CategoryServiceError(#[from] category_service::err::Error),
     #[error("Court Service Error: {0}")]
     CourtServiceError(#[from] court_service::err::Error),
+    #[error("The event hasn't started, wait until the event starts to register assistances")]
+    InvalidAssistanceDate,
+    #[error("Users can register only before an event starts")]
+    InvalidRegistrationDate,
 }
