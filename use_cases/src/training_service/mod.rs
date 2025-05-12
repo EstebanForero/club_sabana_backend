@@ -312,11 +312,12 @@ impl TrainingService {
 
     pub async fn register_user(
         &self,
-        registration_payload: TrainingRegistration,
+        training_id: Uuid,
+        user_id: Uuid,
     ) -> Result<TrainingRegistration> {
         let training = self
             .training_repo
-            .get_training_by_id(registration_payload.id_training)
+            .get_training_by_id(training_id)
             .await?
             .ok_or(Error::TrainingNotFound)?;
 
@@ -328,7 +329,7 @@ impl TrainingService {
 
         if !self
             .category_service
-            .user_has_category(registration_payload.id_user, training.id_category)
+            .user_has_category(user_id, training.id_category)
             .await?
         {
             return Err(Error::UserDoesNotMeetCategoryRequirements);
@@ -336,10 +337,7 @@ impl TrainingService {
 
         if self
             .registration_repo
-            .get_training_registration(
-                registration_payload.id_training,
-                registration_payload.id_user,
-            )
+            .get_training_registration(training_id, user_id)
             .await?
             .is_some()
         {
@@ -352,10 +350,7 @@ impl TrainingService {
         if training.minimum_payment > 0.0
             && !self
                 .tuition_service
-                .has_active_tuition_with_amount(
-                    registration_payload.id_user,
-                    training.minimum_payment,
-                )
+                .has_active_tuition_with_amount(user_id, training.minimum_payment)
                 .await // Corrected
                 .map_err(fun_name)?
         {
@@ -365,8 +360,8 @@ impl TrainingService {
         }
 
         let registration_to_create = TrainingRegistration {
-            id_training: registration_payload.id_training,
-            id_user: registration_payload.id_user,
+            id_training: training_id,
+            id_user: user_id,
             registration_datetime: Utc::now().naive_utc(),
             attended: false,
             attendance_datetime: None,

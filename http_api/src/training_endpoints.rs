@@ -40,7 +40,10 @@ pub fn training_router(training_service: TrainingService) -> Router {
                 .put(update_training) // Added PUT
                 .delete(delete_training),
         )
-        .route("/trainings/{id}/register", post(register_user_for_training)) // Renamed for clarity
+        .route(
+            "/trainings/{id}/register/{user_id}",
+            post(register_user_for_training),
+        ) // Renamed for clarity
         .route(
             "/trainings/{training_id}/attendance/{user_id}",
             post(mark_attendance),
@@ -184,15 +187,11 @@ async fn list_trainings(
 }
 
 async fn register_user_for_training(
-    // Renamed
     State(training_service): State<TrainingService>,
-    // Path(id_training): Path<Uuid>, // id_training is now in the body
-    Json(registration_payload): Json<TrainingRegistration>, // Use TrainingRegistration directly for payload
+    Path((id_training, id_user)): Path<(Uuid, Uuid)>, // id_training is now in the body
 ) -> HttpResult<Json<TrainingRegistration>> {
-    // Return the created registration
-    // registration_payload.id_training = id_training; // Set from path if needed, or ensure it's in payload
     let registration = training_service
-        .register_user(registration_payload) // Pass the whole payload
+        .register_user(id_training, id_user) // Pass the whole payload
         .await
         .http_err("register user for training")?;
     Ok(Json(registration))
@@ -299,6 +298,14 @@ impl<T> HttpError<T> for Result<T, Error> {
                         "Tuition requirement not met for training.",
                     )
                 }
+                Error::InvalidAssistanceDate => (
+                    StatusCode::BAD_REQUEST,
+                    "Invalid assistance date, the training hasn't started",
+                ),
+                Error::InvalidRegistrationDate => (
+                    StatusCode::BAD_REQUEST,
+                    "Users can only register, before the training starts",
+                ),
             };
             (status_code, message.to_string()).into_response()
         })
