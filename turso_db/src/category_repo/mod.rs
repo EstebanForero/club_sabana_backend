@@ -129,7 +129,7 @@ impl UserCategoryRepository for TursoDb {
 
         let mut rows = conn
             .query(
-                "SELECT id_category, id_user, user_level FROM user_category WHERE id_category = ?1 AND id_user = ?2 AND deleted = 0",
+                "SELECT id_category, id_user, user_level FROM user_category WHERE id_category = ?2 AND id_user = ?1 AND deleted = 0",
                 params![id_user.to_string(), id_category.to_string()],
             )
             .await
