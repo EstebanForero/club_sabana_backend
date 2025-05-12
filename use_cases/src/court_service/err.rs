@@ -20,4 +20,6 @@ pub enum Error {
     ReservationNotFound,
     #[error("Cannot link a reservation to both a training and a tournament")]
     ReservationPurposeConflict,
+    #[error("Can't delete a court if reservation already exists")]
+    ReservationExists,
 }

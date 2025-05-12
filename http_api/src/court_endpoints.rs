@@ -171,6 +171,10 @@ impl<T> HttpError<T> for Result<T, CourtServiceError> {
                     StatusCode::BAD_REQUEST,
                     "Reservation cannot be for both training and tournament.",
                 ),
+                CourtServiceError::ReservationExists => (
+                StatusCode::BAD_REQUEST,
+                    "Can't delete a court, if it has already reservations, first delete the reservations"
+            ),
             };
             (status, msg.to_string()).into_response()
         })

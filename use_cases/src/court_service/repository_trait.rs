@@ -35,4 +35,6 @@ pub trait CourtReservationRepository: Send + Sync {
         &self,
         tournament_id: Uuid,
     ) -> Result<Option<CourtReservation>>;
+
+    async fn court_has_reservations(&self, id_court: Uuid) -> Result<bool>;
 }

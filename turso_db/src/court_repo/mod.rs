@@ -60,6 +60,35 @@ impl CourtRepository for TursoDb {
 
 #[async_trait]
 impl CourtReservationRepository for TursoDb {
+    async fn court_has_reservations(&self, id_court: Uuid) -> Result<bool> {
+        let result: Result<Option<i64>> = self // Explicit type annotation for clarity
+            .query_one_with_error(
+                "
+        SELECT 1 FROM court_reservation
+        WHERE id_court = ?1 AND deleted = 0
+        LIMIT 1
+        ",
+                params![id_court.to_string()],
+                Error::UnknownDatabaseError, // Use the appropriate error variant from your Error enum
+            )
+            .await;
+
+        // Process the result:
+        // - If Ok(Some(_)) (a row was found) -> map to Ok(true) (reservations exist)
+        // - If Ok(None)    (no row found)   -> map to Ok(false) (no reservations exist)
+        // - If Err(e)      (database error) -> remains Err(e)
+        result.map(|option| option.is_some())
+
+        /*
+        // Alternative using match (equivalent logic):
+        match result {
+            Ok(Some(_)) => Ok(true),  // Found at least one reservation
+            Ok(None) => Ok(false), // No reservations found
+            Err(e) => Err(e),      // Propagate the database error
+        }
+        */
+    }
+
     async fn create_reservation(&self, reservation: &CourtReservation) -> Result<()> {
         self.execute_with_error(
             "INSERT INTO court_reservation (id_court_reservation, id_court, start_reservation_datetime, end_reservation_datetime, id_training, id_tournament, deleted) 
